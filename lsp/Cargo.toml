@@ -1,0 +1,24 @@
+[package]
+name = "npm-update-checker-lsp"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Language server for showing npm package update availability in package.json"
+
+[[bin]]
+name = "npm-update-checker-lsp"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "io-std", "sync", "time"] }
+tower-lsp = "0.20"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+semver = "1"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+dashmap = "6"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+futures = "0.3"
+
+

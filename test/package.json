@@ -1,0 +1,17 @@
+{
+  "name": "test-project",
+  "version": "1.0.0",
+  "description": "Test package for npm-updates extension",
+  "dependencies": {
+    "express": "^4.17.0",
+    "lodash": "^4.17.0",
+    "axios": "^0.21.0",
+    "moment": "^2.29.0"
+  },
+  "devDependencies": {
+    "typescript": "^4.0.0",
+    "eslint": "^7.0.0",
+    "prettier": "^2.0.0",
+    "jest": "^27.0.0"
+  }
+}

@@ -1,0 +1,11 @@
+id = "zed-npm-update-checker"
+name = "NPM Package.json Update Checker"
+version = "0.1.0"
+schema_version = 1
+authors = ["Evan Simpson <evan@evan.news>"]
+description = "Shows npm package update availability with inlay hints, diagnostics, and quick fixes."
+repository = "https://github.com/e-simpson/zed-npm-update-checker"
+
+[language_servers.npm-update-checker-lsp]
+name = "NPM Update Checker LSP"
+languages = ["JSON"]

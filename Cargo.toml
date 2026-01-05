@@ -1,0 +1,21 @@
+[package]
+name = "zed-npm-update-checker"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Zed extension showing npm package update availability"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+zed_extension_api = "0.7.0"
+
+[workspace]
+members = ["lsp"]
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
