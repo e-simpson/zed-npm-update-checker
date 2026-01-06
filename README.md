@@ -13,9 +13,9 @@
 
 ### Features
 
-- 📥 Shows if a package can be updated
-- 🔧 Offers auto-complete to update a package to the latest version
-- 🔍 Shows changelog between current version and latest version (from GitHub releases and/or CHANGELOG.md)
+- 📥 Highlights outdated packages in package.json files
+- 🔍 Changelog between current version and latest version (intelligently parsing GitHub releases and/or CHANGELOG.md directly - no api calls)
+- 🔧 Offers auto-complete to update the package
 - 📚 Distinguishes between major, minor, and patch updates
 
 ### Install via Zed Extensions
@@ -49,5 +49,5 @@
 
 - Cache TTL: 5 minutes
 - Concurrent requests: 10
-- Request timeout: 10 seconds
+- Request timeout: 30 seconds
 - Changelog priortiy: GitHub releases > CHANGELOG.md

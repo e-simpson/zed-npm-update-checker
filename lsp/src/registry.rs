@@ -10,7 +10,6 @@ use tokio::sync::Semaphore;
 use tracing::{debug, warn};
 
 const NPM_REGISTRY_URL: &str = "https://registry.npmjs.org";
-const GITHUB_API_URL: &str = "https://api.github.com";
 const CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 const MAX_CONCURRENT_REQUESTS: usize = 10;
 const MAX_CHANGELOG_VERSIONS: usize = 15;
@@ -35,6 +34,12 @@ lazy_static! {
     /// - @scope/package@1.0.0
     static ref VERSION_TAG_REGEX: Regex = Regex::new(
         r"(?:^v|@|^)(\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+[\w.]+)?)$"
+    ).unwrap();
+    
+    /// Regex to extract entries from GitHub releases atom feed
+    /// Captures: title (version tag) and content (release body in HTML)
+    static ref ATOM_ENTRY_REGEX: Regex = Regex::new(
+        r"(?s)<entry>.*?<title>([^<]+)</title>.*?<content[^>]*>(.*?)</content>.*?</entry>"
     ).unwrap();
 }
 
@@ -102,6 +107,21 @@ struct CacheKey {
     current_version: String,
 }
 
+/// Simple cache key for version-only info (no changelog)
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+struct VersionCacheKey {
+    package_name: String,
+}
+
+/// Lightweight package info without changelog (for fast initial display)
+#[derive(Debug, Clone)]
+pub struct PackageVersionInfo {
+    pub name: String,
+    pub latest_version: String,
+    pub repository_url: Option<String>,
+    pub fetched_at: Instant,
+}
+
 #[derive(Debug, Deserialize)]
 struct NpmPackageResponse {
     #[serde(rename = "dist-tags")]
@@ -130,17 +150,15 @@ impl Repository {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct GitHubRelease {
-    tag_name: String,
-    name: Option<String>,
-    body: Option<String>,
-    published_at: Option<String>,
-}
+// Note: GitHubRelease struct removed - we now use the atom feed instead of the API
 
 pub struct NpmRegistry {
     client: reqwest::Client,
+    /// Cache for full package info (with changelog)
     cache: Arc<DashMap<CacheKey, PackageInfo>>,
+    /// Cache for version-only info (fast, no changelog)
+    version_cache: Arc<DashMap<VersionCacheKey, PackageVersionInfo>>,
+    /// Semaphore for limiting concurrent npm requests
     semaphore: Arc<Semaphore>,
 }
 
@@ -155,10 +173,105 @@ impl NpmRegistry {
         Self {
             client,
             cache: Arc::new(DashMap::new()),
+            version_cache: Arc::new(DashMap::new()),
             semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_REQUESTS)),
         }
     }
+    
+    /// Fast version check - only fetches npm registry, no GitHub API calls
+    /// Use this for initial display of updates, then fetch changelogs separately
+    pub async fn get_package_version_info(&self, package_name: &str) -> Option<PackageVersionInfo> {
+        let cache_key = VersionCacheKey {
+            package_name: package_name.to_string(),
+        };
 
+        // Check cache first
+        if let Some(cached) = self.version_cache.get(&cache_key) {
+            if cached.fetched_at.elapsed() < CACHE_TTL {
+                return Some(cached.clone());
+            }
+        }
+
+        // Acquire semaphore permit for rate limiting npm requests
+        let _permit = self.semaphore.acquire().await.ok()?;
+
+        // Fetch from npm registry only
+        let url = format!("{}/{}", NPM_REGISTRY_URL, package_name);
+        
+        let response = match self.client.get(&url).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                debug!("Failed to fetch {}: {}", package_name, e);
+                return None;
+            }
+        };
+
+        if !response.status().is_success() {
+            debug!("Non-success status for {}: {}", package_name, response.status());
+            return None;
+        }
+
+        let data: NpmPackageResponse = match response.json().await {
+            Ok(d) => d,
+            Err(e) => {
+                debug!("Failed to parse response for {}: {}", package_name, e);
+                return None;
+            }
+        };
+
+        let latest = data.dist_tags.and_then(|t| t.latest)?;
+        let repo_url = data.repository.and_then(|r| r.get_url());
+
+        let info = PackageVersionInfo {
+            name: package_name.to_string(),
+            latest_version: latest,
+            repository_url: repo_url,
+            fetched_at: Instant::now(),
+        };
+
+        // Update cache
+        self.version_cache.insert(cache_key, info.clone());
+
+        Some(info)
+    }
+    
+    /// Fetch changelog for a package (makes GitHub API calls - rate limited!)
+    /// Call this after get_package_version_info, with delays between calls
+    pub async fn fetch_changelog_for_package(
+        &self,
+        package_name: &str,
+        current_version: &str,
+        latest_version: &str,
+        repo_url: &str,
+    ) -> Option<String> {
+        let cache_key = CacheKey {
+            package_name: package_name.to_string(),
+            current_version: current_version.to_string(),
+        };
+
+        // Check if we already have this changelog cached
+        if let Some(cached) = self.cache.get(&cache_key) {
+            if cached.fetched_at.elapsed() < CACHE_TTL && cached.changelog.is_some() {
+                return cached.changelog.clone();
+            }
+        }
+
+        // Fetch changelog from GitHub
+        let changelog = self.fetch_changelog(repo_url, current_version, latest_version).await;
+        
+        // Update full cache with changelog
+        let info = PackageInfo {
+            name: package_name.to_string(),
+            latest_version: latest_version.to_string(),
+            repository_url: Some(repo_url.to_string()),
+            changelog: changelog.clone(),
+            fetched_at: Instant::now(),
+        };
+        self.cache.insert(cache_key, info);
+
+        changelog
+    }
+    
     /// Get full package info including changelog filtered by current version
     pub async fn get_package_info(&self, package_name: &str, current_version: &str) -> Option<PackageInfo> {
         let cache_key = CacheKey {
@@ -260,7 +373,7 @@ impl NpmRegistry {
         }
     }
 
-    /// Fetch multiple release notes from GitHub releases API
+    /// Fetch multiple release notes from GitHub releases atom feed (no API rate limits!)
     async fn fetch_github_releases(
         &self,
         owner: &str,
@@ -283,49 +396,40 @@ impl NpmRegistry {
             }
         };
 
-        // Fetch releases list (GitHub returns up to 30 by default, which is plenty)
-        let url = format!("{}/repos/{}/{}/releases?per_page=30", GITHUB_API_URL, owner, repo);
+        // Use the atom feed instead of API - no rate limits!
+        let url = format!("https://github.com/{}/{}/releases.atom", owner, repo);
         
-        debug!("Fetching GitHub releases for {}/{}: current={}, latest={}", owner, repo, current_version, latest_version);
+        debug!("Fetching GitHub releases atom feed for {}/{}", owner, repo);
         
-        let response = match self.client
-            .get(&url)
-            .header("Accept", "application/vnd.github.v3+json")
-            .send()
-            .await
-        {
+        let response = match self.client.get(&url).send().await {
             Ok(r) if r.status().is_success() => r,
             Ok(r) => {
-                let status = r.status();
-                // Log rate limiting specifically
-                if status.as_u16() == 403 {
-                    warn!("GitHub API rate limit likely exceeded for {}/{}", owner, repo);
-                } else {
-                    debug!("GitHub releases API returned status {} for {}/{}", status, owner, repo);
-                }
+                debug!("GitHub releases atom feed returned status {} for {}/{}", r.status(), owner, repo);
                 return vec![];
             }
             Err(e) => {
-                debug!("Failed to fetch GitHub releases for {}/{}: {}", owner, repo, e);
+                debug!("Failed to fetch GitHub releases atom feed for {}/{}: {}", owner, repo, e);
                 return vec![];
             }
         };
 
-        let releases: Vec<GitHubRelease> = match response.json().await {
-            Ok(r) => r,
+        let content = match response.text().await {
+            Ok(c) => c,
             Err(e) => {
-                debug!("Failed to parse GitHub releases for {}/{}: {}", owner, repo, e);
+                debug!("Failed to read atom feed response for {}/{}: {}", owner, repo, e);
                 return vec![];
             }
         };
-        
-        debug!("Fetched {} releases for {}/{}", releases.len(), owner, repo);
 
         let mut entries = Vec::new();
 
-        for release in releases {
-            // Parse version from tag
-            let version = match parse_version_from_tag(&release.tag_name) {
+        // Parse atom feed entries using regex
+        for cap in ATOM_ENTRY_REGEX.captures_iter(&content) {
+            let title = cap.get(1).map(|m| m.as_str()).unwrap_or("");
+            let html_content = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+            
+            // Parse version from title (which is the tag name like "v4.3.5")
+            let version = match parse_version_from_tag(title) {
                 Some(v) => v,
                 None => continue,
             };
@@ -335,15 +439,15 @@ impl NpmRegistry {
                 continue;
             }
 
-            if let Some(body) = release.body {
-                if !body.trim().is_empty() {
-                    let version_string = release.name.unwrap_or_else(|| release.tag_name.clone());
-                    entries.push(ChangelogEntry {
-                        version: version.clone(),
-                        version_string,
-                        body,
-                    });
-                }
+            // Convert HTML content to markdown-ish text
+            let body = html_to_text(html_content);
+            
+            if !body.trim().is_empty() {
+                entries.push(ChangelogEntry {
+                    version: version.clone(),
+                    version_string: title.to_string(),
+                    body,
+                });
             }
 
             // Stop if we have enough
@@ -354,6 +458,8 @@ impl NpmRegistry {
 
         // Sort by version descending (newest first)
         entries.sort_by(|a, b| b.version.cmp(&a.version));
+
+        debug!("Parsed {} releases from atom feed for {}/{}", entries.len(), owner, repo);
 
         entries
     }
@@ -403,6 +509,76 @@ impl Default for NpmRegistry {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Convert HTML content from atom feed to readable text
+fn html_to_text(html: &str) -> String {
+    // Decode HTML entities
+    let text = html
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&#39;", "'")
+        .replace("&nbsp;", " ");
+    
+    // Convert common HTML tags to markdown
+    let text = text
+        // Headings
+        .replace("<h1>", "# ")
+        .replace("</h1>", "\n")
+        .replace("<h2>", "## ")
+        .replace("</h2>", "\n")
+        .replace("<h3>", "### ")
+        .replace("</h3>", "\n")
+        // Lists
+        .replace("<ul>", "")
+        .replace("</ul>", "")
+        .replace("<ol>", "")
+        .replace("</ol>", "")
+        .replace("<li>", "- ")
+        .replace("</li>", "\n")
+        // Paragraphs and breaks
+        .replace("<p>", "")
+        .replace("</p>", "\n\n")
+        .replace("<br>", "\n")
+        .replace("<br/>", "\n")
+        .replace("<br />", "\n")
+        // Code
+        .replace("<code>", "`")
+        .replace("</code>", "`")
+        .replace("<pre>", "```\n")
+        .replace("</pre>", "\n```\n")
+        // Bold/italic
+        .replace("<strong>", "**")
+        .replace("</strong>", "**")
+        .replace("<b>", "**")
+        .replace("</b>", "**")
+        .replace("<em>", "*")
+        .replace("</em>", "*")
+        .replace("<i>", "*")
+        .replace("</i>", "*");
+    
+    // Remove remaining HTML tags
+    let mut result = String::new();
+    let mut in_tag = false;
+    
+    for c in text.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => result.push(c),
+            _ => {}
+        }
+    }
+    
+    // Clean up excessive whitespace
+    let lines: Vec<&str> = result.lines()
+        .map(|l| l.trim())
+        .collect();
+    
+    lines.join("\n")
 }
 
 /// Parse a GitHub URL to extract owner and repo
@@ -695,6 +871,103 @@ mod tests {
             parse_github_url("git+https://github.com/eds2002/react-native-screen-transitions.git"),
             Some(("eds2002".to_string(), "react-native-screen-transitions".to_string()))
         );
+    }
+
+    /// Integration test for full package info flow
+    /// Run with: cargo test test_full_package_info_flow -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore]
+    async fn test_full_package_info_flow() {
+        let registry = NpmRegistry::new();
+        
+        println!("Testing zod with current_version 3.22.0...");
+        let info = registry.get_package_info("zod", "3.22.0").await;
+        
+        match info {
+            Some(pkg_info) => {
+                println!("Package info retrieved:");
+                println!("  Latest version: {}", pkg_info.latest_version);
+                println!("  Repository URL: {:?}", pkg_info.repository_url);
+                println!("  Changelog: {:?}", pkg_info.changelog.as_ref().map(|c| {
+                    let len = c.len();
+                    if len > 200 {
+                        format!("{}... ({} chars total)", &c[..200], len)
+                    } else {
+                        c.clone()
+                    }
+                }));
+            }
+            None => {
+                println!("Failed to get package info for zod!");
+            }
+        }
+    }
+
+    /// Integration test that fetches GitHub releases via atom feed (no rate limits!)
+    /// Run with: cargo test test_github_atom_feed -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore]
+    async fn test_github_atom_feed() {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .user_agent("npm-update-checker-lsp")
+            .build()
+            .unwrap();
+        
+        let url = "https://github.com/colinhacks/zod/releases.atom";
+        println!("Fetching atom feed: {}", url);
+        
+        let response = client.get(url).send().await;
+        
+        match response {
+            Ok(r) => {
+                println!("Status: {}", r.status());
+                
+                if r.status().is_success() {
+                    let content = r.text().await.unwrap_or_default();
+                    println!("Feed length: {} chars", content.len());
+                    
+                    let mut count = 0;
+                    for cap in ATOM_ENTRY_REGEX.captures_iter(&content) {
+                        let title = cap.get(1).map(|m| m.as_str()).unwrap_or("");
+                        let html_content = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+                        let body = html_to_text(html_content);
+                        
+                        println!("\nEntry {}:", count + 1);
+                        println!("  Title: {}", title);
+                        println!("  Body preview: {}...", &body.chars().take(200).collect::<String>());
+                        
+                        if let Some(version) = parse_version_from_tag(title) {
+                            println!("  Parsed version: {}", version);
+                        } else {
+                            println!("  Failed to parse version from title!");
+                        }
+                        
+                        count += 1;
+                        if count >= 3 {
+                            break;
+                        }
+                    }
+                    println!("\nTotal entries found: {}", count);
+                } else {
+                    let body = r.text().await.unwrap_or_default();
+                    println!("Error body: {}", body);
+                }
+            }
+            Err(e) => println!("Request failed: {}", e),
+        }
+    }
+    
+    #[test]
+    fn test_html_to_text() {
+        let html = "&lt;p&gt;Hello &amp; goodbye&lt;/p&gt;";
+        let text = html_to_text(html);
+        assert!(text.contains("Hello & goodbye"));
+        
+        let html_list = "<ul><li>Item 1</li><li>Item 2</li></ul>";
+        let text = html_to_text(html_list);
+        assert!(text.contains("- Item 1"));
+        assert!(text.contains("- Item 2"));
     }
 
     #[test]

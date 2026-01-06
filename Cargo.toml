@@ -3,7 +3,7 @@ name = "zed-npm-update-checker"
 version = "0.1.4"
 edition = "2021"
 license = "MIT"
-description = "Zed extension showing npm package update availability"
+description = "Highlights outdated npm packages in package.json files."
 
 [lib]
 crate-type = ["cdylib"]

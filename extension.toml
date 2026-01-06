@@ -3,7 +3,7 @@ name = "NPM Package.json Update Checker"
 version = "0.1.4"
 schema_version = 1
 authors = ["Evan Simpson <evan@evan.news>"]
-description = "Highlight outdated npm packages in package.json files and offer auto-complete to update to the latest version."
+description = "Highlights outdated npm packages in package.json files."
 repository = "https://github.com/e-simpson/zed-npm-update-checker"
 
 [language_servers.npm-update-checker-lsp]

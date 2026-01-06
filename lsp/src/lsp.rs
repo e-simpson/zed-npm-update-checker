@@ -91,30 +91,52 @@ impl Backend {
         // Trigger refresh to show loading state
         let _ = self.client.send_request::<lsp_types::request::InlayHintRefreshRequest>(()).await;
 
-        // Spawn individual tasks for each package to update diagnostics incrementally
-        let mut handles = Vec::new();
+        // ═══════════════════════════════════════════════════════════════════════════
+        // PHASE 1: Fast version checks (no GitHub API calls)
+        // Fetch all npm registry info in parallel, show diagnostics immediately
+        // ═══════════════════════════════════════════════════════════════════════════
+        
+        let mut version_handles = Vec::new();
         
         for dep in &dependencies {
             let registry = self.registry.clone();
-            let client = self.client.clone();
-            let documents = self.documents.clone();
-            let uri = uri.clone();
             let dep_name = dep.name.clone();
             let dep_clean_version = dep.clean_version.clone();
             
             let handle = tokio::spawn(async move {
-                // Fetch package info
-                let info = registry.get_package_info(&dep_name, &dep_clean_version).await;
-                
-                // Determine status
-                let status = if let Some(pkg_info) = info {
+                let version_info = registry.get_package_version_info(&dep_name).await;
+                (dep_name, dep_clean_version, version_info)
+            });
+            
+            version_handles.push(handle);
+        }
+        
+        // Collect packages that need changelog fetching
+        let mut packages_needing_changelog: Vec<(String, String, String, String)> = Vec::new();
+        
+        // Process version results and update state immediately
+        for handle in version_handles {
+            if let Ok((dep_name, dep_clean_version, version_info)) = handle.await {
+                let status = if let Some(pkg_info) = version_info {
                     if !dep_clean_version.is_empty() {
-                        check_version_status(
+                        let status = check_version_status(
                             &dep_clean_version,
                             &pkg_info.latest_version,
-                            pkg_info.changelog,
-                            pkg_info.repository_url,
-                        )
+                            None, // No changelog yet - will be fetched in Phase 2
+                            pkg_info.repository_url.clone(),
+                        );
+                        
+                        // Queue for changelog fetch if there's an update and a repo URL
+                        if let VersionStatus::UpdateAvailable { ref latest, repository_url: Some(ref repo_url), .. } = status {
+                            packages_needing_changelog.push((
+                                dep_name.clone(),
+                                dep_clean_version.clone(),
+                                latest.clone(),
+                                repo_url.clone(),
+                            ));
+                        }
+                        
+                        status
                     } else {
                         VersionStatus::Unknown
                     }
@@ -124,27 +146,76 @@ impl Backend {
                 
                 // Update state for this package
                 {
-                    let mut docs = documents.write().await;
+                    let mut docs = self.documents.write().await;
                     if let Some(state) = docs.get_mut(&uri) {
                         state.check_states.insert(dep_name.clone(), CheckState::Done(status));
                     }
                 }
-                
-                // Refresh inlay hints (removes the ⏳ for this package)
-                let _ = client.send_request::<lsp_types::request::InlayHintRefreshRequest>(()).await;
-                
-                (uri, dep_name)
-            });
-            
-            handles.push(handle);
+            }
         }
         
-        // Wait for all tasks and publish diagnostics incrementally
-        for handle in handles {
-            if let Ok((uri, _dep_name)) = handle.await {
-                // Publish updated diagnostics after each package completes
-                self.publish_diagnostics(&uri).await;
-            }
+        // Refresh UI to show version updates (without changelogs)
+        let _ = self.client.send_request::<lsp_types::request::InlayHintRefreshRequest>(()).await;
+        self.publish_diagnostics(&uri).await;
+        
+        // ═══════════════════════════════════════════════════════════════════════════
+        // PHASE 2: Background changelog fetching (no rate limits - uses atom feed!)
+        // Fetch changelogs in parallel since we're not using the GitHub API
+        // ═══════════════════════════════════════════════════════════════════════════
+        
+        if !packages_needing_changelog.is_empty() {
+            let registry = self.registry.clone();
+            let documents = self.documents.clone();
+            let client = self.client.clone();
+            let uri = uri.clone();
+            
+            // Spawn background task to fetch changelogs in parallel
+            tokio::spawn(async move {
+                // Fetch all changelogs in parallel (no rate limits with atom feed!)
+                let mut changelog_handles = Vec::new();
+                
+                for (pkg_name, current_version, latest_version, repo_url) in packages_needing_changelog {
+                    let registry = registry.clone();
+                    let handle = tokio::spawn(async move {
+                        let changelog = registry.fetch_changelog_for_package(
+                            &pkg_name,
+                            &current_version,
+                            &latest_version,
+                            &repo_url,
+                        ).await;
+                        (pkg_name, changelog)
+                    });
+                    changelog_handles.push(handle);
+                }
+                
+                // Process results as they complete
+                for handle in changelog_handles {
+                    if let Ok((pkg_name, changelog)) = handle.await {
+                        if changelog.is_some() {
+                            let mut docs = documents.write().await;
+                            if let Some(state) = docs.get_mut(&uri) {
+                                if let Some(CheckState::Done(VersionStatus::UpdateAvailable { 
+                                    latest, severity, repository_url, .. 
+                                })) = state.check_states.get(&pkg_name).cloned() {
+                                    // Update with the new changelog
+                                    state.check_states.insert(
+                                        pkg_name.clone(),
+                                        CheckState::Done(VersionStatus::UpdateAvailable {
+                                            latest,
+                                            severity,
+                                            changelog,
+                                            repository_url,
+                                        }),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Final refresh after all changelogs are fetched
+                let _ = client.send_request::<lsp_types::request::InlayHintRefreshRequest>(()).await;
+            });
         }
     }
 
@@ -469,7 +540,7 @@ impl LanguageServer for Backend {
                     let content = match (changelog, repository_url) {
                         (Some(cl), Some(repo)) => {
                             let clean_url = clean_repo_url(repo);
-                            format!("{}\n\n---\n\n[View on GitHub]({})", cl, clean_url)
+                            format!("[View on GitHub]({})\n\n---\n\n{}", clean_url, cl)
                         }
                         (Some(cl), None) => {
                             cl.clone()
