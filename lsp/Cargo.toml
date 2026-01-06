@@ -1,6 +1,6 @@
 [package]
 name = "npm-update-checker-lsp"
-version = "0.1.4"
+version = "1.0.0"
 edition = "2021"
 license = "MIT"
 description = "Language server for highlighting outdated npm packages in package.json files."

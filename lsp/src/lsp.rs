@@ -92,11 +92,11 @@ impl Backend {
         let _ = self.client.send_request::<lsp_types::request::InlayHintRefreshRequest>(()).await;
 
         // ═══════════════════════════════════════════════════════════════════════════
-        // PHASE 1: Fast version checks (no GitHub API calls)
-        // Fetch all npm registry info in parallel, show diagnostics immediately
+        // Fetch version info AND changelogs together in parallel
+        // Since we use atom feeds (no rate limits), we can do everything at once
         // ═══════════════════════════════════════════════════════════════════════════
         
-        let mut version_handles = Vec::new();
+        let mut handles = Vec::new();
         
         for dep in &dependencies {
             let registry = self.registry.clone();
@@ -104,119 +104,76 @@ impl Backend {
             let dep_clean_version = dep.clean_version.clone();
             
             let handle = tokio::spawn(async move {
+                // Step 1: Get version info from npm registry
                 let version_info = registry.get_package_version_info(&dep_name).await;
-                (dep_name, dep_clean_version, version_info)
-            });
-            
-            version_handles.push(handle);
-        }
-        
-        // Collect packages that need changelog fetching
-        let mut packages_needing_changelog: Vec<(String, String, String, String)> = Vec::new();
-        
-        // Process version results and update state immediately
-        for handle in version_handles {
-            if let Ok((dep_name, dep_clean_version, version_info)) = handle.await {
-                let status = if let Some(pkg_info) = version_info {
+                
+                // Step 2: If there's an update with a repo, fetch the changelog too
+                let (status, changelog) = if let Some(ref pkg_info) = version_info {
                     if !dep_clean_version.is_empty() {
-                        let status = check_version_status(
+                        let temp_status = check_version_status(
                             &dep_clean_version,
                             &pkg_info.latest_version,
-                            None, // No changelog yet - will be fetched in Phase 2
+                            None, // Placeholder - we'll fill in changelog after
                             pkg_info.repository_url.clone(),
                         );
                         
-                        // Queue for changelog fetch if there's an update and a repo URL
-                        if let VersionStatus::UpdateAvailable { ref latest, repository_url: Some(ref repo_url), .. } = status {
-                            packages_needing_changelog.push((
-                                dep_name.clone(),
-                                dep_clean_version.clone(),
-                                latest.clone(),
-                                repo_url.clone(),
-                            ));
-                        }
+                        // Fetch changelog if there's an update and a repo URL
+                        let changelog = if let VersionStatus::UpdateAvailable { 
+                            ref latest, 
+                            repository_url: Some(ref repo_url), 
+                            .. 
+                        } = temp_status {
+                            registry.fetch_changelog_for_package(
+                                &dep_name,
+                                &dep_clean_version,
+                                latest,
+                                repo_url,
+                            ).await
+                        } else {
+                            None
+                        };
                         
-                        status
+                        (Some(temp_status), changelog)
                     } else {
-                        VersionStatus::Unknown
+                        (Some(VersionStatus::Unknown), None)
                     }
                 } else {
-                    VersionStatus::Unknown
+                    (None, None)
                 };
                 
-                // Update state for this package
-                {
-                    let mut docs = self.documents.write().await;
-                    if let Some(state) = docs.get_mut(&uri) {
-                        state.check_states.insert(dep_name.clone(), CheckState::Done(status));
+                // Build final status with changelog
+                let final_status = match status {
+                    Some(VersionStatus::UpdateAvailable { latest, severity, repository_url, .. }) => {
+                        VersionStatus::UpdateAvailable {
+                            latest,
+                            severity,
+                            changelog,
+                            repository_url,
+                        }
                     }
+                    Some(other) => other,
+                    None => VersionStatus::Unknown,
+                };
+                
+                (dep_name, final_status)
+            });
+            
+            handles.push(handle);
+        }
+        
+        // Wait for ALL fetches to complete, then update state
+        for handle in handles {
+            if let Ok((dep_name, status)) = handle.await {
+                let mut docs = self.documents.write().await;
+                if let Some(state) = docs.get_mut(&uri) {
+                    state.check_states.insert(dep_name, CheckState::Done(status));
                 }
             }
         }
         
-        // Refresh UI to show version updates (without changelogs)
+        // Publish diagnostics and refresh UI once everything is ready
         let _ = self.client.send_request::<lsp_types::request::InlayHintRefreshRequest>(()).await;
         self.publish_diagnostics(&uri).await;
-        
-        // ═══════════════════════════════════════════════════════════════════════════
-        // PHASE 2: Background changelog fetching (no rate limits - uses atom feed!)
-        // Fetch changelogs in parallel since we're not using the GitHub API
-        // ═══════════════════════════════════════════════════════════════════════════
-        
-        if !packages_needing_changelog.is_empty() {
-            let registry = self.registry.clone();
-            let documents = self.documents.clone();
-            let client = self.client.clone();
-            let uri = uri.clone();
-            
-            // Spawn background task to fetch changelogs in parallel
-            tokio::spawn(async move {
-                // Fetch all changelogs in parallel (no rate limits with atom feed!)
-                let mut changelog_handles = Vec::new();
-                
-                for (pkg_name, current_version, latest_version, repo_url) in packages_needing_changelog {
-                    let registry = registry.clone();
-                    let handle = tokio::spawn(async move {
-                        let changelog = registry.fetch_changelog_for_package(
-                            &pkg_name,
-                            &current_version,
-                            &latest_version,
-                            &repo_url,
-                        ).await;
-                        (pkg_name, changelog)
-                    });
-                    changelog_handles.push(handle);
-                }
-                
-                // Process results as they complete
-                for handle in changelog_handles {
-                    if let Ok((pkg_name, changelog)) = handle.await {
-                        if changelog.is_some() {
-                            let mut docs = documents.write().await;
-                            if let Some(state) = docs.get_mut(&uri) {
-                                if let Some(CheckState::Done(VersionStatus::UpdateAvailable { 
-                                    latest, severity, repository_url, .. 
-                                })) = state.check_states.get(&pkg_name).cloned() {
-                                    // Update with the new changelog
-                                    state.check_states.insert(
-                                        pkg_name.clone(),
-                                        CheckState::Done(VersionStatus::UpdateAvailable {
-                                            latest,
-                                            severity,
-                                            changelog,
-                                            repository_url,
-                                        }),
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                // Final refresh after all changelogs are fetched
-                let _ = client.send_request::<lsp_types::request::InlayHintRefreshRequest>(()).await;
-            });
-        }
     }
 
     /// Publish diagnostics for outdated packages
@@ -535,7 +492,7 @@ impl LanguageServer for Backend {
             if dep.line == position.line && 
                position.character >= dep.version_start_col && 
                position.character <= dep.version_end_col {
-                if let Some(CheckState::Done(VersionStatus::UpdateAvailable { latest, severity, changelog, repository_url })) = state.check_states.get(&dep.name) {
+                if let Some(CheckState::Done(VersionStatus::UpdateAvailable { latest: _, severity: _, changelog, repository_url })) = state.check_states.get(&dep.name) {
                     // Build hover content based on what's available
                     let content = match (changelog, repository_url) {
                         (Some(cl), Some(repo)) => {
@@ -553,9 +510,7 @@ impl LanguageServer for Backend {
                             )
                         }
                         (None, None) => {
-                            format!(
-                                "*Changelog not available.*"                                
-                            )
+                            "*Changelog not available.*".to_string()
                         }
                     };
 

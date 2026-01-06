@@ -1,6 +1,6 @@
 id = "zed-npm-update-checker"
 name = "NPM Package.json Update Checker"
-version = "0.1.4"
+version = "1.0.0"
 schema_version = 1
 authors = ["Evan Simpson <evan@evan.news>"]
 description = "Highlights outdated npm packages in package.json files."
