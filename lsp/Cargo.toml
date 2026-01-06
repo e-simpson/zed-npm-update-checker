@@ -3,7 +3,7 @@ name = "npm-package-json-checker-lsp"
 version = "1.0.0"
 edition = "2021"
 license = "MIT"
-description = "🎐 LSP for highlighting outdated npm packages and changelogs in package.json files."
+description = "🎐 LSP for highlighting outdated npm packages and changelogs in package.json files. Shown minimalistically without bloat or emojis."
 
 [[bin]]
 name = "npm-package-json-checker-lsp"

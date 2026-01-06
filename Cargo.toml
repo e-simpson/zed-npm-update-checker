@@ -3,7 +3,7 @@ name = "npm-package-json-checker"
 version = "1.0.0"
 edition = "2021"
 license = "MIT"
-description = "🎐 Highlights outdated npm packages in package.json files."
+description = "🎐 Highlights outdated npm packages in package.json files. Shown minimalistically without bloat or emojis."
 
 [lib]
 crate-type = ["cdylib"]
