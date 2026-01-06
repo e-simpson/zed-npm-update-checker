@@ -1,12 +1,12 @@
 [package]
-name = "npm-update-checker-lsp"
+name = "npm-package-json-checker-lsp"
 version = "1.0.0"
 edition = "2021"
 license = "MIT"
-description = "Language server for highlighting outdated npm packages in package.json files."
+description = "🎐 LSP for highlighting outdated npm packages and changelogs in package.json files."
 
 [[bin]]
-name = "npm-update-checker-lsp"
+name = "npm-package-json-checker-lsp"
 path = "src/main.rs"
 
 [dependencies]

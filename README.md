@@ -2,7 +2,7 @@
     <img src="./images/icon.png" width="100" alt="Logo"/>
     <h3 align="center">NPM Update Checker for <a href="https://zed.dev/">Zed IDE</a></h3>
     <p align="center">
-	Shows outdated npm package updates in package.json files.
+	Show outdated npm packages and changelogs in package.json files minimalistically.
       <br><br>
 		<a href="https://github.com/e-simpson/zed-npm-update-checker"><img src="https://img.shields.io/github/stars/e-simpson/zed-npm-update-checker"></a>
         </p>
@@ -17,6 +17,17 @@
 - 🔍 Changelog between current version and latest version (intelligently parsing GitHub releases and/or CHANGELOG.md directly - no api calls)
 - 🔧 Offers auto-complete to update the package
 - 📚 Distinguishes between major, minor, and patch updates
+
+### Important Note
+For the inlay progress indicator, enable them in Zed settings:
+```json
+// settings.json
+{
+  "inlay_hints": {
+    "enabled": true
+  }
+}
+```
 
 ### Install via Zed Extensions
 1. Open Zed
