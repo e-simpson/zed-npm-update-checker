@@ -25,7 +25,7 @@ lazy_static! {
         r"(?i)^#{1,2}\s*\[?v?(\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+[\w.]+)?)\]?"
     ).unwrap();
     
-    /// Regex to extract version from git tags
+    /// Regex to extract standard semver from git tags
     /// Matches various tag formats:
     /// - v1.0.0
     /// - 1.0.0
@@ -34,6 +34,17 @@ lazy_static! {
     /// - @scope/package@1.0.0
     static ref VERSION_TAG_REGEX: Regex = Regex::new(
         r"(?:^v|@|^)(\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+[\w.]+)?)$"
+    ).unwrap();
+    
+    /// Regex to extract semver from anywhere in a string (for monorepo titles)
+    /// Matches: "oxlint v1.2.3 & oxfmt v4.5.6" -> extracts "1.2.3"
+    static ref VERSION_ANYWHERE_REGEX: Regex = Regex::new(
+        r"v?(\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+[\w.]+)?)"
+    ).unwrap();
+    
+    /// Regex for non-standard version formats like three.js "r182"
+    static ref REVISION_TAG_REGEX: Regex = Regex::new(
+        r"^r(\d+)$"
     ).unwrap();
     
     /// Regex to extract entries from GitHub releases atom feed
@@ -165,7 +176,7 @@ pub struct NpmRegistry {
 impl NpmRegistry {
     pub fn new() -> Self {
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(15))
             .user_agent("npm-update-checker-lsp")
             .build()
             .unwrap_or_default();
@@ -381,20 +392,11 @@ impl NpmRegistry {
         current_version: &str,
         latest_version: &str,
     ) -> Vec<ChangelogEntry> {
-        let current = match Version::parse(current_version) {
-            Ok(v) => v,
-            Err(e) => {
-                debug!("Failed to parse current version '{}': {}", current_version, e);
-                return vec![];
-            }
-        };
-        let latest = match Version::parse(latest_version) {
-            Ok(v) => v,
-            Err(e) => {
-                debug!("Failed to parse latest version '{}': {}", latest_version, e);
-                return vec![];
-            }
-        };
+        // Try to parse current and latest versions (may fail for non-semver like r182)
+        let current_semver = Version::parse(current_version).ok();
+        let latest_semver = Version::parse(latest_version).ok();
+        
+        let use_version_filtering = current_semver.is_some() && latest_semver.is_some();
 
         // Use the atom feed instead of API - no rate limits!
         let url = format!("https://github.com/{}/{}/releases.atom", owner, repo);
@@ -422,46 +424,72 @@ impl NpmRegistry {
         };
 
         let mut entries = Vec::new();
+        let mut fallback_entries = Vec::new(); // For when version filtering yields nothing
 
         // Parse atom feed entries using regex
         for cap in ATOM_ENTRY_REGEX.captures_iter(&content) {
             let title = cap.get(1).map(|m| m.as_str()).unwrap_or("");
             let html_content = cap.get(2).map(|m| m.as_str()).unwrap_or("");
             
-            // Parse version from title (which is the tag name like "v4.3.5")
-            let version = match parse_version_from_tag(title) {
-                Some(v) => v,
-                None => continue,
-            };
-
-            // Filter: current < version <= latest
-            if version <= current || version > latest {
-                continue;
-            }
-
             // Convert HTML content to markdown-ish text
             let body = html_to_text(html_content);
             
-            if !body.trim().is_empty() {
-                entries.push(ChangelogEntry {
-                    version: version.clone(),
+            if body.trim().is_empty() {
+                continue;
+            }
+            
+            // Try to parse version from title
+            let parsed_version = parse_version_from_tag(title);
+            
+            // Store in fallback entries (recent releases regardless of version)
+            if fallback_entries.len() < MAX_CHANGELOG_VERSIONS {
+                // Use a dummy version for fallback entries if we can't parse one
+                let version = parsed_version.clone().unwrap_or_else(|| Version::new(0, 0, 0));
+                fallback_entries.push(ChangelogEntry {
+                    version,
                     version_string: title.to_string(),
-                    body,
+                    body: body.clone(),
                 });
             }
-
-            // Stop if we have enough
-            if entries.len() >= MAX_CHANGELOG_VERSIONS {
-                break;
+            
+            // Try version-based filtering if we have valid semver versions
+            if use_version_filtering {
+                if let (Some(ref current), Some(ref latest), Some(ref version)) = 
+                    (&current_semver, &latest_semver, &parsed_version) 
+                {
+                    // Filter: current < version <= latest
+                    if version > current && version <= latest {
+                        entries.push(ChangelogEntry {
+                            version: version.clone(),
+                            version_string: title.to_string(),
+                            body,
+                        });
+                        
+                        if entries.len() >= MAX_CHANGELOG_VERSIONS {
+                            break;
+                        }
+                    }
+                }
             }
         }
 
-        // Sort by version descending (newest first)
-        entries.sort_by(|a, b| b.version.cmp(&a.version));
+        // If version filtering yielded results, use them; otherwise use fallback
+        let final_entries = if !entries.is_empty() {
+            // Sort by version descending (newest first)
+            entries.sort_by(|a, b| b.version.cmp(&a.version));
+            entries
+        } else if !fallback_entries.is_empty() {
+            debug!("Version filtering failed, using {} most recent releases for {}/{}", 
+                   fallback_entries.len(), owner, repo);
+            // Fallback entries are already in order (newest first from atom feed)
+            fallback_entries
+        } else {
+            vec![]
+        };
 
-        debug!("Parsed {} releases from atom feed for {}/{}", entries.len(), owner, repo);
+        debug!("Parsed {} releases from atom feed for {}/{}", final_entries.len(), owner, repo);
 
-        entries
+        final_entries
     }
 
     /// Fetch and extract relevant sections from CHANGELOG.md
@@ -613,9 +641,14 @@ fn parse_version_from_header(line: &str) -> Option<Version> {
         .and_then(|m| Version::parse(m.as_str()).ok())
 }
 
-/// Parse version from a git tag
+/// Parse version from a git tag or release title
+/// Handles various formats:
+/// - Standard: v1.0.0, 1.0.0
+/// - Monorepo: package@1.0.0, @scope/package@1.0.0
+/// - Revision: r182 (three.js style) -> converts to 182.0.0
+/// - Complex titles: "oxlint v1.2.3 & oxfmt v4.5.6" -> extracts first version
 fn parse_version_from_tag(tag: &str) -> Option<Version> {
-    // First try the regex for complex tags
+    // First try the regex for standard tags (v1.0.0 or package@1.0.0)
     if let Some(cap) = VERSION_TAG_REGEX.captures(tag) {
         if let Some(m) = cap.get(1) {
             if let Ok(v) = Version::parse(m.as_str()) {
@@ -633,40 +666,81 @@ fn parse_version_from_tag(tag: &str) -> Option<Version> {
         }
     }
     
+    // Handle revision-style tags like "r182" (three.js)
+    if let Some(cap) = REVISION_TAG_REGEX.captures(tag) {
+        if let Some(m) = cap.get(1) {
+            if let Ok(num) = m.as_str().parse::<u64>() {
+                // Convert r182 to 182.0.0 for comparison purposes
+                return Version::parse(&format!("{}.0.0", num)).ok();
+            }
+        }
+    }
+    
+    // Try to find a semver anywhere in the string (for complex titles)
+    // e.g., "oxlint v1.2.3 & oxfmt v4.5.6" -> extracts "1.2.3"
+    if let Some(cap) = VERSION_ANYWHERE_REGEX.captures(tag) {
+        if let Some(m) = cap.get(1) {
+            if let Ok(v) = Version::parse(m.as_str()) {
+                return Some(v);
+            }
+        }
+    }
+    
     // Fall back to simple parsing (v1.0.0 or 1.0.0)
     let cleaned = tag.trim_start_matches('v');
     Version::parse(cleaned).ok()
 }
 
 /// Extract changelog sections for versions between current and latest
+/// Falls back to returning the most recent sections if version parsing fails
 fn extract_changelog_sections_since_version(
     content: &str,
     current_version: &str,
     latest_version: &str,
 ) -> Vec<ChangelogEntry> {
-    let current = match Version::parse(current_version) {
-        Ok(v) => v,
-        Err(_) => return vec![],
-    };
-    let latest = match Version::parse(latest_version) {
-        Ok(v) => v,
-        Err(_) => return vec![],
-    };
+    // Try to parse versions for filtering
+    let current_semver = Version::parse(current_version).ok();
+    let latest_semver = Version::parse(latest_version).ok();
+    let use_version_filtering = current_semver.is_some() && latest_semver.is_some();
 
     let mut entries = Vec::new();
-    let mut current_entry: Option<(Version, String, Vec<String>)> = None;
+    let mut fallback_entries = Vec::new(); // For when version filtering yields nothing
+    let mut current_entry: Option<(Option<Version>, String, Vec<String>)> = None;
     
     for line in content.lines() {
         // Check if this is a version header
         if line.starts_with("## ") || line.starts_with("# ") {
-            // Save the previous entry if it's in range
-            if let Some((version, header, lines)) = current_entry.take() {
-                if version > current && version <= latest {
-                    entries.push(ChangelogEntry {
-                        version,
-                        version_string: header,
-                        body: lines.join("\n"),
-                    });
+            // Save the previous entry
+            if let Some((version_opt, header, lines)) = current_entry.take() {
+                let body = lines.join("\n");
+                if !body.trim().is_empty() || !header.is_empty() {
+                    // Always add to fallback (up to limit)
+                    if fallback_entries.len() < MAX_CHANGELOG_VERSIONS {
+                        let version = version_opt.clone().unwrap_or_else(|| Version::new(0, 0, 0));
+                        fallback_entries.push(ChangelogEntry {
+                            version,
+                            version_string: header.clone(),
+                            body: body.clone(),
+                        });
+                    }
+                    
+                    // Add to filtered entries if version is in range
+                    if use_version_filtering {
+                        if let (Some(ref current), Some(ref latest), Some(ref version)) = 
+                            (&current_semver, &latest_semver, &version_opt) 
+                        {
+                            if version > current && version <= latest {
+                                entries.push(ChangelogEntry {
+                                    version: version.clone(),
+                                    version_string: header,
+                                    body,
+                                });
+                            } else if version <= current {
+                                // We've gone past the relevant versions in filtered mode
+                                break;
+                            }
+                        }
+                    }
                     
                     if entries.len() >= MAX_CHANGELOG_VERSIONS {
                         break;
@@ -674,36 +748,53 @@ fn extract_changelog_sections_since_version(
                 }
             }
             
-            // Start a new entry if we can parse the version
-            if let Some(version) = parse_version_from_header(line) {
-                // Only track versions that could be relevant
-                if version > current && version <= latest {
-                    current_entry = Some((version, line.to_string(), Vec::new()));
-                } else if version <= current {
-                    // We've gone past the relevant versions, stop
-                    break;
-                }
-            }
+            // Try to parse version from header, but continue even if it fails
+            let version_opt = parse_version_from_header(line);
+            current_entry = Some((version_opt, line.to_string(), Vec::new()));
         } else if let Some((_, _, ref mut lines)) = current_entry {
             lines.push(line.to_string());
         }
     }
     
     // Don't forget the last entry
-    if let Some((version, header, lines)) = current_entry {
-        if version > current && version <= latest && entries.len() < MAX_CHANGELOG_VERSIONS {
-            entries.push(ChangelogEntry {
-                version,
-                version_string: header,
-                body: lines.join("\n"),
-            });
+    if let Some((version_opt, header, lines)) = current_entry {
+        let body = lines.join("\n");
+        if !body.trim().is_empty() || !header.is_empty() {
+            if fallback_entries.len() < MAX_CHANGELOG_VERSIONS {
+                let version = version_opt.clone().unwrap_or_else(|| Version::new(0, 0, 0));
+                fallback_entries.push(ChangelogEntry {
+                    version,
+                    version_string: header.clone(),
+                    body: body.clone(),
+                });
+            }
+            
+            if use_version_filtering {
+                if let (Some(ref current), Some(ref latest), Some(ref version)) = 
+                    (&current_semver, &latest_semver, &version_opt) 
+                {
+                    if version > current && version <= latest && entries.len() < MAX_CHANGELOG_VERSIONS {
+                        entries.push(ChangelogEntry {
+                            version: version.clone(),
+                            version_string: header,
+                            body,
+                        });
+                    }
+                }
+            }
         }
     }
 
-    // Sort by version descending (newest first)
-    entries.sort_by(|a, b| b.version.cmp(&a.version));
+    // Use filtered entries if we got any, otherwise use fallback
+    let final_entries = if !entries.is_empty() {
+        entries.sort_by(|a, b| b.version.cmp(&a.version));
+        entries
+    } else {
+        // Fallback entries are already in document order (typically newest first)
+        fallback_entries
+    };
 
-    entries
+    final_entries
 }
 
 /// Merge changelogs from GitHub releases and CHANGELOG.md file
@@ -1046,6 +1137,24 @@ mod tests {
         assert_eq!(
             parse_version_from_tag("v3.22.4"),
             Some(Version::parse("3.22.4").unwrap())
+        );
+        // Test three.js revision format (r182)
+        assert_eq!(
+            parse_version_from_tag("r182"),
+            Some(Version::parse("182.0.0").unwrap())
+        );
+        assert_eq!(
+            parse_version_from_tag("r99"),
+            Some(Version::parse("99.0.0").unwrap())
+        );
+        // Test complex monorepo titles like oxlint
+        assert_eq!(
+            parse_version_from_tag("oxlint v1.2.3 & oxfmt v4.5.6"),
+            Some(Version::parse("1.2.3").unwrap()) // Takes first version found
+        );
+        assert_eq!(
+            parse_version_from_tag("Release 2.0.0 - Major Update"),
+            Some(Version::parse("2.0.0").unwrap())
         );
     }
 

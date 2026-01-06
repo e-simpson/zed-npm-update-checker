@@ -49,5 +49,5 @@
 
 - Cache TTL: 5 minutes
 - Concurrent requests: 10
-- Request timeout: 30 seconds
+- Request timeout: 15 seconds
 - Changelog priortiy: GitHub releases > CHANGELOG.md
