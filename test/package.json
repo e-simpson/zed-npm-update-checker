@@ -6,7 +6,9 @@
     "express": "^4.17.0",
     "lodash": "^4.17.0",
     "axios": "^0.21.0",
-    "moment": "^2.29.0"
+    "moment": "^2.29.0",
+    "zod": "^3.22.0",
+    "react-native-screen-transitions": "^3.0.0"
   },
   "devDependencies": {
     "typescript": "^4.0.0",

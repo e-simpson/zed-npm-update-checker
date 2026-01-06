@@ -7,7 +7,11 @@ use tower_lsp::{Client, LanguageServer, LspService, Server};
 use tracing::{debug, info};
 
 use crate::parser::{parse_package_json, Dependency};
-use crate::registry::{check_version_status, NpmRegistry, UpdateSeverity, VersionStatus};
+use crate::registry::{check_version_status, NpmRegistry, VersionStatus};
+
+// Re-export for type inference in pattern matching
+#[allow(unused_imports)]
+use crate::registry::UpdateSeverity;
 
 const LSP_NAME: &str = "npm-update-checker-lsp";
 
@@ -49,7 +53,7 @@ impl Backend {
         uri.path().ends_with("package.json")
     }
 
-    /// Process a document - first show loading, then fetch versions
+    /// Process a document - first show loading, then fetch versions incrementally
     async fn process_document(&self, uri: &Url, text: &str) {
         if !Self::is_package_json(uri) {
             return;
@@ -87,24 +91,26 @@ impl Backend {
         // Trigger refresh to show loading state
         let _ = self.client.send_request::<lsp_types::request::InlayHintRefreshRequest>(()).await;
 
-        // Get package names for fetching
-        let package_names: Vec<String> = dependencies
-            .iter()
-            .map(|d| d.name.clone())
-            .collect();
-
-        // Fetch package info (including changelogs)
-        let results = self.registry.get_package_infos(&package_names).await;
+        // Spawn individual tasks for each package to update diagnostics incrementally
+        let mut handles = Vec::new();
         
-        // Update states with results
-        let mut new_states = HashMap::new();
-        for (name, info) in results {
-            let status = if let Some(pkg_info) = info {
-                // Find the dependency to get its clean version
-                if let Some(dep) = dependencies.iter().find(|d| d.name == name) {
-                    if !dep.clean_version.is_empty() {
+        for dep in &dependencies {
+            let registry = self.registry.clone();
+            let client = self.client.clone();
+            let documents = self.documents.clone();
+            let uri = uri.clone();
+            let dep_name = dep.name.clone();
+            let dep_clean_version = dep.clean_version.clone();
+            
+            let handle = tokio::spawn(async move {
+                // Fetch package info
+                let info = registry.get_package_info(&dep_name, &dep_clean_version).await;
+                
+                // Determine status
+                let status = if let Some(pkg_info) = info {
+                    if !dep_clean_version.is_empty() {
                         check_version_status(
-                            &dep.clean_version,
+                            &dep_clean_version,
                             &pkg_info.latest_version,
                             pkg_info.changelog,
                             pkg_info.repository_url,
@@ -114,24 +120,32 @@ impl Backend {
                     }
                 } else {
                     VersionStatus::Unknown
+                };
+                
+                // Update state for this package
+                {
+                    let mut docs = documents.write().await;
+                    if let Some(state) = docs.get_mut(&uri) {
+                        state.check_states.insert(dep_name.clone(), CheckState::Done(status));
+                    }
                 }
-            } else {
-                VersionStatus::Unknown
-            };
-            new_states.insert(name, CheckState::Done(status));
+                
+                // Refresh inlay hints (removes the ⏳ for this package)
+                let _ = client.send_request::<lsp_types::request::InlayHintRefreshRequest>(()).await;
+                
+                (uri, dep_name)
+            });
+            
+            handles.push(handle);
         }
-
-        // Store updated state
-        {
-            let mut docs = self.documents.write().await;
-            if let Some(state) = docs.get_mut(uri) {
-                state.check_states = new_states;
+        
+        // Wait for all tasks and publish diagnostics incrementally
+        for handle in handles {
+            if let Ok((uri, _dep_name)) = handle.await {
+                // Publish updated diagnostics after each package completes
+                self.publish_diagnostics(&uri).await;
             }
         }
-
-        // Refresh inlay hints and publish diagnostics
-        let _ = self.client.send_request::<lsp_types::request::InlayHintRefreshRequest>(()).await;
-        self.publish_diagnostics(uri).await;
     }
 
     /// Publish diagnostics for outdated packages
@@ -147,11 +161,11 @@ impl Backend {
             if let Some(CheckState::Done(status)) = state.check_states.get(&dep.name) {
                 if let VersionStatus::UpdateAvailable { latest, severity, .. } = status {
                     // Severity levels: Patch → INFO, Minor → WARNING, Major → ERROR
-                    let severity_level = match severity {
-                        UpdateSeverity::Major => DiagnosticSeverity::ERROR,
-                        UpdateSeverity::Minor => DiagnosticSeverity::WARNING,
-                        UpdateSeverity::Patch => DiagnosticSeverity::INFORMATION,
-                    };
+                    // let severity_level = match severity {
+                    //     UpdateSeverity::Major => DiagnosticSeverity::ERROR,
+                    //     UpdateSeverity::Minor => DiagnosticSeverity::WARNING,
+                    //     UpdateSeverity::Patch => DiagnosticSeverity::INFORMATION,
+                    // };
 
                     diagnostics.push(Diagnostic {
                         range: Range {
@@ -164,8 +178,8 @@ impl Backend {
                                 character: dep.version_end_col,
                             },
                         },
-                        severity: Some(severity_level),
-                        code: Some(NumberOrString::String(format!("outdated-{}", severity.label().to_lowercase()))),
+                        severity: Some(DiagnosticSeverity::INFORMATION),
+                        code: Some(NumberOrString::String("outdated-dependency".to_string())),
                         source: Some(LSP_NAME.to_string()),
                         message: format!(
                             "{} update available: {} → {}",
@@ -204,76 +218,19 @@ impl Backend {
 
         for dep in &state.dependencies {
             let check_state = state.check_states.get(&dep.name);
-            
-            // Determine label and optional tooltip based on state
-            let hint_data: Option<(String, Option<String>)> = match check_state {
-                Some(CheckState::Checking) => {
-                    // Show loading spinner
-                    Some((
-                        "  ⏳ checking...".to_string(),
-                        Some(format!("Checking {} for updates...", dep.name))
-                    ))
-                }
-                Some(CheckState::Done(VersionStatus::UpToDate)) => {
-                    // No icon for up-to-date packages
-                    None
-                }
-                Some(CheckState::Done(VersionStatus::UpdateAvailable { latest, severity, changelog, repository_url })) => {
-                    // Color indicator based on severity
-                    let dot = match severity {
-                        UpdateSeverity::Major => "🔴",
-                        UpdateSeverity::Minor => "🟡",
-                        UpdateSeverity::Patch => "🟢",
-                    };
-                    let label = format!("  {} ↑ {}", dot, latest);
-                    
-                    // Only build tooltip if we have changelog AND repository
-                    let tooltip = if changelog.is_some() && repository_url.is_some() {
-                        let mut parts = vec![];
-                        
-                        if let Some(cl) = changelog {
-                            parts.push(cl.clone());
-                        }
-                        
-                        // Add link to repository
-                        if let Some(repo) = repository_url {
-                            let clean_url = clean_repo_url(repo);
-                            parts.push(format!("\n\n[View on GitHub]({})", clean_url));
-                        }
-                        
-                        Some(parts.join("\n"))
-                    } else {
-                        None
-                    };
-                    
-                    Some((label, tooltip))
-                }
-                Some(CheckState::Done(VersionStatus::Unknown)) | Some(CheckState::Done(VersionStatus::Checking)) | None => {
-                    // Show unknown indicator
-                    Some((
-                        "  ❓".to_string(), 
-                        Some(format!("Could not check {} for updates", dep.name))
-                    ))
-                }
-            };
 
-            if let Some((label, tooltip)) = hint_data {
-                let tooltip_content = tooltip.map(|t| {
-                    InlayHintTooltip::MarkupContent(MarkupContent {
-                        kind: MarkupKind::Markdown,
-                        value: t,
-                    })
-                });
-
+            // Only show ⏳ while checking - no indicators after check completes
+            if matches!(check_state, Some(CheckState::Checking)) {
                 hints.push(InlayHint {
                     position: Position {
                         line: dep.line,
-                        character: dep.version_end_col + 1,
+                        // Position before the version string (after the opening quote)
+                        character: dep.version_start_col,
                     },
-                    label: InlayHintLabel::String(label),
-                    kind: Some(InlayHintKind::PARAMETER),
+                    label: InlayHintLabel::String("⏳ ".to_string()),
+                    kind: None,
                     text_edits: None,
-                    tooltip: tooltip_content,
+                    tooltip: None,
                     padding_left: Some(false),
                     padding_right: Some(true),
                     data: None,
@@ -476,8 +433,12 @@ impl LanguageServer for Backend {
     }
 
     async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
-        debug!("inlay_hint: {}", params.text_document.uri);
+        debug!("inlay_hint request for: {}", params.text_document.uri);
         let hints = self.generate_inlay_hints(&params.text_document.uri).await;
+        debug!("inlay_hint returning {} hints", hints.len());
+        for hint in &hints {
+            debug!("  hint at {:?}: {:?}", hint.position, hint.label);
+        }
         Ok(Some(hints))
     }
 
@@ -503,27 +464,40 @@ impl LanguageServer for Backend {
             if dep.line == position.line && 
                position.character >= dep.version_start_col && 
                position.character <= dep.version_end_col {
-                if let Some(CheckState::Done(VersionStatus::UpdateAvailable { changelog, repository_url, .. })) = state.check_states.get(&dep.name) {
-                    // Only show hover if we have both changelog AND repository
-                    if let (Some(cl), Some(repo)) = (changelog, repository_url) {
-                        let clean_url = clean_repo_url(repo);
-                        
-                        let content = format!(
-                            "{}\n\n---\n\n[View on GitHub]({})",
-                            cl, clean_url
-                        );
+                if let Some(CheckState::Done(VersionStatus::UpdateAvailable { latest, severity, changelog, repository_url })) = state.check_states.get(&dep.name) {
+                    // Build hover content based on what's available
+                    let content = match (changelog, repository_url) {
+                        (Some(cl), Some(repo)) => {
+                            let clean_url = clean_repo_url(repo);
+                            format!("{}\n\n---\n\n[View on GitHub]({})", cl, clean_url)
+                        }
+                        (Some(cl), None) => {
+                            cl.clone()
+                        }
+                        (None, Some(repo)) => {
+                            let clean_url = clean_repo_url(repo);
+                            format!(
+                                "*Changelog not available.*\n\n[View on GitHub]({})",
+                                clean_url
+                            )
+                        }
+                        (None, None) => {
+                            format!(
+                                "*Changelog not available.*"                                
+                            )
+                        }
+                    };
 
-                        return Ok(Some(Hover {
-                            contents: HoverContents::Markup(MarkupContent {
-                                kind: MarkupKind::Markdown,
-                                value: content,
-                            }),
-                            range: Some(Range {
-                                start: Position { line: dep.line, character: dep.version_start_col },
-                                end: Position { line: dep.line, character: dep.version_end_col },
-                            }),
-                        }));
-                    }
+                    return Ok(Some(Hover {
+                        contents: HoverContents::Markup(MarkupContent {
+                            kind: MarkupKind::Markdown,
+                            value: content,
+                        }),
+                        range: Some(Range {
+                            start: Position { line: dep.line, character: dep.version_start_col },
+                            end: Position { line: dep.line, character: dep.version_end_col },
+                        }),
+                    }));
                 }
             }
         }

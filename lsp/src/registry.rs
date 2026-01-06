@@ -1,6 +1,9 @@
 use dashmap::DashMap;
+use lazy_static::lazy_static;
+use regex::Regex;
 use semver::Version;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Semaphore;
@@ -10,6 +13,30 @@ const NPM_REGISTRY_URL: &str = "https://registry.npmjs.org";
 const GITHUB_API_URL: &str = "https://api.github.com";
 const CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 const MAX_CONCURRENT_REQUESTS: usize = 10;
+const MAX_CHANGELOG_VERSIONS: usize = 15;
+
+lazy_static! {
+    /// Regex to extract version numbers from changelog headers
+    /// Matches patterns like:
+    /// - "## 19.2.1 (Dec 3, 2025)"
+    /// - "## [4.18.2] - 2024-01-15"
+    /// - "## v1.0.0"
+    /// - "# 1.0.0"
+    static ref VERSION_HEADER_REGEX: Regex = Regex::new(
+        r"(?i)^#{1,2}\s*\[?v?(\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+[\w.]+)?)\]?"
+    ).unwrap();
+    
+    /// Regex to extract version from git tags
+    /// Matches various tag formats:
+    /// - v1.0.0
+    /// - 1.0.0
+    /// - package@1.0.0 (monorepo style)
+    /// - package-name@1.0.0-beta.1
+    /// - @scope/package@1.0.0
+    static ref VERSION_TAG_REGEX: Regex = Regex::new(
+        r"(?:^v|@|^)(\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+[\w.]+)?)$"
+    ).unwrap();
+}
 
 /// Severity of version update
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,15 +50,6 @@ pub enum UpdateSeverity {
 }
 
 impl UpdateSeverity {
-    /// Get the symbol for this severity
-    pub fn symbol(&self) -> &'static str {
-        match self {
-            UpdateSeverity::Major => "⬆️",  // Red double arrow for major
-            UpdateSeverity::Minor => "↗️",  // Orange arrow for minor  
-            UpdateSeverity::Patch => "↑",   // Simple arrow for patch
-        }
-    }
-
     /// Get a descriptive label
     pub fn label(&self) -> &'static str {
         match self {
@@ -60,6 +78,14 @@ pub enum VersionStatus {
     Unknown,
 }
 
+/// A single changelog entry with version and content
+#[derive(Debug, Clone)]
+struct ChangelogEntry {
+    version: Version,
+    version_string: String,
+    body: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct PackageInfo {
     pub name: String,
@@ -67,6 +93,13 @@ pub struct PackageInfo {
     pub repository_url: Option<String>,
     pub changelog: Option<String>,
     pub fetched_at: Instant,
+}
+
+/// Cache key includes both package name and current version for changelog relevance
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+struct CacheKey {
+    package_name: String,
+    current_version: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -107,7 +140,7 @@ struct GitHubRelease {
 
 pub struct NpmRegistry {
     client: reqwest::Client,
-    cache: Arc<DashMap<String, PackageInfo>>,
+    cache: Arc<DashMap<CacheKey, PackageInfo>>,
     semaphore: Arc<Semaphore>,
 }
 
@@ -126,12 +159,17 @@ impl NpmRegistry {
         }
     }
 
-    /// Get full package info including changelog
-    pub async fn get_package_info(&self, package_name: &str) -> Option<PackageInfo> {
+    /// Get full package info including changelog filtered by current version
+    pub async fn get_package_info(&self, package_name: &str, current_version: &str) -> Option<PackageInfo> {
+        let cache_key = CacheKey {
+            package_name: package_name.to_string(),
+            current_version: current_version.to_string(),
+        };
+
         // Check cache first
-        if let Some(cached) = self.cache.get(package_name) {
+        if let Some(cached) = self.cache.get(&cache_key) {
             if cached.fetched_at.elapsed() < CACHE_TTL {
-                debug!("Cache hit for {}", package_name);
+                debug!("Cache hit for {}@{}", package_name, current_version);
                 return Some(cached.clone());
             }
         }
@@ -168,9 +206,9 @@ impl NpmRegistry {
         let latest = data.dist_tags.and_then(|t| t.latest)?;
         let repo_url = data.repository.and_then(|r| r.get_url());
         
-        // Try to fetch changelog from GitHub
+        // Try to fetch changelog from GitHub with version range
         let changelog = if let Some(ref url) = repo_url {
-            self.fetch_changelog(url, &latest).await
+            self.fetch_changelog(url, current_version, &latest).await
         } else {
             None
         };
@@ -184,125 +222,181 @@ impl NpmRegistry {
         };
 
         // Update cache
-        self.cache.insert(package_name.to_string(), info.clone());
+        self.cache.insert(cache_key, info.clone());
 
         Some(info)
     }
 
-    /// Fetch changelog from GitHub releases or CHANGELOG.md
-    async fn fetch_changelog(&self, repo_url: &str, version: &str) -> Option<String> {
-        let (owner, repo) = parse_github_url(repo_url)?;
+    /// Fetch changelog from GitHub releases and CHANGELOG.md, merge both sources
+    async fn fetch_changelog(&self, repo_url: &str, current_version: &str, latest_version: &str) -> Option<String> {
+        let (owner, repo) = match parse_github_url(repo_url) {
+            Some(parsed) => parsed,
+            None => {
+                debug!("Failed to parse GitHub URL: {}", repo_url);
+                return None;
+            }
+        };
         
-        // Try GitHub releases API first
-        if let Some(changelog) = self.fetch_github_release(&owner, &repo, version).await {
-            return Some(changelog);
+        debug!("Fetching changelog for {}/{}: {} -> {}", owner, repo, current_version, latest_version);
+        
+        // Fetch from both sources in parallel
+        let (releases_result, changelog_file_result) = tokio::join!(
+            self.fetch_github_releases(&owner, &repo, current_version, latest_version),
+            self.fetch_changelog_file(&owner, &repo, current_version, latest_version)
+        );
+        
+        debug!("GitHub releases found: {}, CHANGELOG.md sections found: {}", 
+               releases_result.len(), changelog_file_result.len());
+        
+        // Merge both sources
+        let merged = merge_changelogs(releases_result, changelog_file_result, current_version, latest_version);
+        
+        if merged.is_empty() {
+            debug!("No changelog content after merge for {}/{}", owner, repo);
+            None
+        } else {
+            debug!("Changelog content generated for {}/{}: {} chars", owner, repo, merged.len());
+            Some(merged)
         }
-
-        // Fall back to CHANGELOG.md
-        self.fetch_changelog_file(&owner, &repo).await
     }
 
-    /// Fetch release notes from GitHub releases API
-    async fn fetch_github_release(&self, owner: &str, repo: &str, version: &str) -> Option<String> {
-        // Try different tag formats
-        let tags = [
-            format!("v{}", version),
-            version.to_string(),
-        ];
+    /// Fetch multiple release notes from GitHub releases API
+    async fn fetch_github_releases(
+        &self,
+        owner: &str,
+        repo: &str,
+        current_version: &str,
+        latest_version: &str,
+    ) -> Vec<ChangelogEntry> {
+        let current = match Version::parse(current_version) {
+            Ok(v) => v,
+            Err(e) => {
+                debug!("Failed to parse current version '{}': {}", current_version, e);
+                return vec![];
+            }
+        };
+        let latest = match Version::parse(latest_version) {
+            Ok(v) => v,
+            Err(e) => {
+                debug!("Failed to parse latest version '{}': {}", latest_version, e);
+                return vec![];
+            }
+        };
 
-        for tag in &tags {
-            let url = format!("{}/repos/{}/{}/releases/tags/{}", GITHUB_API_URL, owner, repo, tag);
-            
-            debug!("Fetching GitHub release: {}", url);
-            
-            let response = match self.client
-                .get(&url)
-                .header("Accept", "application/vnd.github.v3+json")
-                .send()
-                .await
-            {
-                Ok(r) if r.status().is_success() => r,
-                _ => continue,
+        // Fetch releases list (GitHub returns up to 30 by default, which is plenty)
+        let url = format!("{}/repos/{}/{}/releases?per_page=30", GITHUB_API_URL, owner, repo);
+        
+        debug!("Fetching GitHub releases for {}/{}: current={}, latest={}", owner, repo, current_version, latest_version);
+        
+        let response = match self.client
+            .get(&url)
+            .header("Accept", "application/vnd.github.v3+json")
+            .send()
+            .await
+        {
+            Ok(r) if r.status().is_success() => r,
+            Ok(r) => {
+                let status = r.status();
+                // Log rate limiting specifically
+                if status.as_u16() == 403 {
+                    warn!("GitHub API rate limit likely exceeded for {}/{}", owner, repo);
+                } else {
+                    debug!("GitHub releases API returned status {} for {}/{}", status, owner, repo);
+                }
+                return vec![];
+            }
+            Err(e) => {
+                debug!("Failed to fetch GitHub releases for {}/{}: {}", owner, repo, e);
+                return vec![];
+            }
+        };
+
+        let releases: Vec<GitHubRelease> = match response.json().await {
+            Ok(r) => r,
+            Err(e) => {
+                debug!("Failed to parse GitHub releases for {}/{}: {}", owner, repo, e);
+                return vec![];
+            }
+        };
+        
+        debug!("Fetched {} releases for {}/{}", releases.len(), owner, repo);
+
+        let mut entries = Vec::new();
+
+        for release in releases {
+            // Parse version from tag
+            let version = match parse_version_from_tag(&release.tag_name) {
+                Some(v) => v,
+                None => continue,
             };
 
-            if let Ok(release) = response.json::<GitHubRelease>().await {
-                if let Some(body) = release.body {
-                    // Truncate if too long
-                    let truncated = if body.len() > 500 {
-                        format!("{}...", &body[..500])
-                    } else {
-                        body
-                    };
-                    return Some(truncated);
+            // Filter: current < version <= latest
+            if version <= current || version > latest {
+                continue;
+            }
+
+            if let Some(body) = release.body {
+                if !body.trim().is_empty() {
+                    let version_string = release.name.unwrap_or_else(|| release.tag_name.clone());
+                    entries.push(ChangelogEntry {
+                        version: version.clone(),
+                        version_string,
+                        body,
+                    });
                 }
+            }
+
+            // Stop if we have enough
+            if entries.len() >= MAX_CHANGELOG_VERSIONS {
+                break;
             }
         }
 
-        None
+        // Sort by version descending (newest first)
+        entries.sort_by(|a, b| b.version.cmp(&a.version));
+
+        entries
     }
 
-    /// Fetch and extract relevant section from CHANGELOG.md
-    async fn fetch_changelog_file(&self, owner: &str, repo: &str) -> Option<String> {
+    /// Fetch and extract relevant sections from CHANGELOG.md
+    async fn fetch_changelog_file(
+        &self,
+        owner: &str,
+        repo: &str,
+        current_version: &str,
+        latest_version: &str,
+    ) -> Vec<ChangelogEntry> {
         // Try common changelog file names
         let files = ["CHANGELOG.md", "changelog.md", "HISTORY.md", "CHANGES.md"];
+        let branches = ["main", "master"];
         
         for file in &files {
-            let url = format!(
-                "https://raw.githubusercontent.com/{}/{}/main/{}",
-                owner, repo, file
-            );
-            
-            if let Ok(response) = self.client.get(&url).send().await {
-                if response.status().is_success() {
-                    if let Ok(content) = response.text().await {
-                        // Extract first section (usually latest version)
-                        return extract_first_changelog_section(&content);
-                    }
-                }
-            }
-            
-            // Also try master branch
-            let url = format!(
-                "https://raw.githubusercontent.com/{}/{}/master/{}",
-                owner, repo, file
-            );
-            
-            if let Ok(response) = self.client.get(&url).send().await {
-                if response.status().is_success() {
-                    if let Ok(content) = response.text().await {
-                        return extract_first_changelog_section(&content);
+            for branch in &branches {
+                let url = format!(
+                    "https://raw.githubusercontent.com/{}/{}/{}/{}",
+                    owner, repo, branch, file
+                );
+                
+                if let Ok(response) = self.client.get(&url).send().await {
+                    if response.status().is_success() {
+                        if let Ok(content) = response.text().await {
+                            let entries = extract_changelog_sections_since_version(
+                                &content,
+                                current_version,
+                                latest_version,
+                            );
+                            if !entries.is_empty() {
+                                return entries;
+                            }
+                        }
                     }
                 }
             }
         }
 
-        None
+        vec![]
     }
 
-    /// Get latest versions for multiple packages concurrently
-    pub async fn get_package_infos(&self, packages: &[String]) -> Vec<(String, Option<PackageInfo>)> {
-        let futures: Vec<_> = packages
-            .iter()
-            .map(|name| {
-                let registry = self.clone_inner();
-                let name = name.clone();
-                async move {
-                    let info = registry.get_package_info(&name).await;
-                    (name, info)
-                }
-            })
-            .collect();
-
-        futures::future::join_all(futures).await
-    }
-
-    fn clone_inner(&self) -> Self {
-        Self {
-            client: self.client.clone(),
-            cache: Arc::clone(&self.cache),
-            semaphore: Arc::clone(&self.semaphore),
-        }
-    }
 }
 
 impl Default for NpmRegistry {
@@ -335,37 +429,179 @@ fn parse_github_url(url: &str) -> Option<(String, String)> {
     None
 }
 
-/// Extract the first section from a changelog
-fn extract_first_changelog_section(content: &str) -> Option<String> {
-    let lines: Vec<&str> = content.lines().collect();
-    let mut in_section = false;
-    let mut section_lines = Vec::new();
-    
-    for line in lines {
-        // Look for version headers (## [x.x.x] or ## x.x.x)
-        if line.starts_with("## ") || line.starts_with("# ") {
-            if in_section {
-                // We've hit the next section, stop
-                break;
+/// Parse version from a changelog header line
+fn parse_version_from_header(line: &str) -> Option<Version> {
+    VERSION_HEADER_REGEX
+        .captures(line)
+        .and_then(|cap| cap.get(1))
+        .and_then(|m| Version::parse(m.as_str()).ok())
+}
+
+/// Parse version from a git tag
+fn parse_version_from_tag(tag: &str) -> Option<Version> {
+    // First try the regex for complex tags
+    if let Some(cap) = VERSION_TAG_REGEX.captures(tag) {
+        if let Some(m) = cap.get(1) {
+            if let Ok(v) = Version::parse(m.as_str()) {
+                return Some(v);
             }
-            in_section = true;
-            section_lines.push(line);
-        } else if in_section {
-            section_lines.push(line);
+        }
+    }
+    
+    // Handle monorepo tags like "package-name@1.0.0" or "@scope/package@1.0.0"
+    if let Some(at_pos) = tag.rfind('@') {
+        let version_part = &tag[at_pos + 1..];
+        let cleaned = version_part.trim_start_matches('v');
+        if let Ok(v) = Version::parse(cleaned) {
+            return Some(v);
+        }
+    }
+    
+    // Fall back to simple parsing (v1.0.0 or 1.0.0)
+    let cleaned = tag.trim_start_matches('v');
+    Version::parse(cleaned).ok()
+}
+
+/// Extract changelog sections for versions between current and latest
+fn extract_changelog_sections_since_version(
+    content: &str,
+    current_version: &str,
+    latest_version: &str,
+) -> Vec<ChangelogEntry> {
+    let current = match Version::parse(current_version) {
+        Ok(v) => v,
+        Err(_) => return vec![],
+    };
+    let latest = match Version::parse(latest_version) {
+        Ok(v) => v,
+        Err(_) => return vec![],
+    };
+
+    let mut entries = Vec::new();
+    let mut current_entry: Option<(Version, String, Vec<String>)> = None;
+    
+    for line in content.lines() {
+        // Check if this is a version header
+        if line.starts_with("## ") || line.starts_with("# ") {
+            // Save the previous entry if it's in range
+            if let Some((version, header, lines)) = current_entry.take() {
+                if version > current && version <= latest {
+                    entries.push(ChangelogEntry {
+                        version,
+                        version_string: header,
+                        body: lines.join("\n"),
+                    });
+                    
+                    if entries.len() >= MAX_CHANGELOG_VERSIONS {
+                        break;
+                    }
+                }
+            }
+            
+            // Start a new entry if we can parse the version
+            if let Some(version) = parse_version_from_header(line) {
+                // Only track versions that could be relevant
+                if version > current && version <= latest {
+                    current_entry = Some((version, line.to_string(), Vec::new()));
+                } else if version <= current {
+                    // We've gone past the relevant versions, stop
+                    break;
+                }
+            }
+        } else if let Some((_, _, ref mut lines)) = current_entry {
+            lines.push(line.to_string());
+        }
+    }
+    
+    // Don't forget the last entry
+    if let Some((version, header, lines)) = current_entry {
+        if version > current && version <= latest && entries.len() < MAX_CHANGELOG_VERSIONS {
+            entries.push(ChangelogEntry {
+                version,
+                version_string: header,
+                body: lines.join("\n"),
+            });
         }
     }
 
-    if section_lines.is_empty() {
-        return None;
-    }
+    // Sort by version descending (newest first)
+    entries.sort_by(|a, b| b.version.cmp(&a.version));
 
-    let section = section_lines.join("\n");
+    entries
+}
+
+/// Merge changelogs from GitHub releases and CHANGELOG.md file
+fn merge_changelogs(
+    releases: Vec<ChangelogEntry>,
+    changelog_file: Vec<ChangelogEntry>,
+    current_version: &str,
+    _latest_version: &str,
+) -> String {
+    // Build a map by version, preferring GitHub releases (usually more curated)
+    let mut by_version: HashMap<String, ChangelogEntry> = HashMap::new();
     
-    // Truncate if too long
-    if section.len() > 500 {
-        Some(format!("{}...", &section[..500]))
+    // Add changelog file entries first (lower priority)
+    for entry in changelog_file {
+        by_version.insert(entry.version.to_string(), entry);
+    }
+    
+    // Add GitHub releases (higher priority, overwrites changelog file entries)
+    for entry in releases {
+        by_version.insert(entry.version.to_string(), entry);
+    }
+    
+    if by_version.is_empty() {
+        return String::new();
+    }
+    
+    // Collect and sort entries
+    let mut entries: Vec<ChangelogEntry> = by_version.into_values().collect();
+    entries.sort_by(|a, b| b.version.cmp(&a.version));
+    
+    // Truncate to max versions
+    let total_count = entries.len();
+    entries.truncate(MAX_CHANGELOG_VERSIONS);
+    
+    // Format output
+    let mut output = Vec::new();
+    
+    for entry in &entries {
+        // Add version header
+        let header = if entry.version_string.starts_with('#') {
+            entry.version_string.clone()
+        } else {
+            format!("## {}", entry.version_string)
+        };
+        
+        output.push(header);
+        
+        // Add body (trimmed)
+        let body = entry.body.trim();
+        if !body.is_empty() {
+            output.push(body.to_string());
+        }
+        
+        output.push(String::new()); // Blank line separator
+    }
+    
+    // Add truncation notice if needed
+    if total_count > MAX_CHANGELOG_VERSIONS {
+        output.push(format!(
+            "*Showing {} of {} versions since {}*",
+            MAX_CHANGELOG_VERSIONS,
+            total_count,
+            current_version
+        ));
+    }
+    
+    let result = output.join("\n").trim().to_string();
+    
+    // Final length limit to avoid massive tooltips
+    // Zed has a nice scrolling view, so we can allow much more content
+    if result.len() > 15000 {
+        format!("{}...\n\n*[Truncated for display]*", &result[..15000])
     } else {
-        Some(section)
+        result
     }
 }
 
@@ -449,5 +685,169 @@ mod tests {
             parse_github_url("git@github.com:facebook/react.git"),
             Some(("facebook".to_string(), "react".to_string()))
         );
+        // Test zod's URL format
+        assert_eq!(
+            parse_github_url("git+https://github.com/colinhacks/zod.git"),
+            Some(("colinhacks".to_string(), "zod".to_string()))
+        );
+        // Test react-native-screen-transitions URL format
+        assert_eq!(
+            parse_github_url("git+https://github.com/eds2002/react-native-screen-transitions.git"),
+            Some(("eds2002".to_string(), "react-native-screen-transitions".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_version_comparison_zod() {
+        // Test that zod's version range works correctly
+        let current = Version::parse("3.22.0").unwrap();
+        let latest = Version::parse("4.3.5").unwrap();
+        let release_version = Version::parse("4.3.5").unwrap();
+        
+        // The filter is: current < version <= latest
+        // 4.3.5 should be included because 3.22.0 < 4.3.5 <= 4.3.5
+        assert!(release_version > current);
+        assert!(release_version <= latest);
+        
+        // Test that version 3.22.0 would NOT be included
+        let same_as_current = Version::parse("3.22.0").unwrap();
+        assert!(!(same_as_current > current)); // 3.22.0 > 3.22.0 is false
+    }
+
+    #[test]
+    fn test_parse_version_from_header() {
+        assert_eq!(
+            parse_version_from_header("## 19.2.1 (Dec 3, 2025)"),
+            Some(Version::parse("19.2.1").unwrap())
+        );
+        assert_eq!(
+            parse_version_from_header("## [4.18.2] - 2024-01-15"),
+            Some(Version::parse("4.18.2").unwrap())
+        );
+        assert_eq!(
+            parse_version_from_header("## v1.0.0"),
+            Some(Version::parse("1.0.0").unwrap())
+        );
+        assert_eq!(
+            parse_version_from_header("# 1.0.0"),
+            Some(Version::parse("1.0.0").unwrap())
+        );
+        assert_eq!(
+            parse_version_from_header("## [1.2.3-beta.1]"),
+            Some(Version::parse("1.2.3-beta.1").unwrap())
+        );
+    }
+
+    #[test]
+    fn test_parse_version_from_tag() {
+        assert_eq!(
+            parse_version_from_tag("v1.0.0"),
+            Some(Version::parse("1.0.0").unwrap())
+        );
+        assert_eq!(
+            parse_version_from_tag("1.0.0"),
+            Some(Version::parse("1.0.0").unwrap())
+        );
+        assert_eq!(
+            parse_version_from_tag("package@1.0.0"),
+            Some(Version::parse("1.0.0").unwrap())
+        );
+        // Monorepo style tags
+        assert_eq!(
+            parse_version_from_tag("react-native-screen-transitions@3.1.0"),
+            Some(Version::parse("3.1.0").unwrap())
+        );
+        assert_eq!(
+            parse_version_from_tag("react-native-screen-transitions@2.4.2-beta.0"),
+            Some(Version::parse("2.4.2-beta.0").unwrap())
+        );
+        assert_eq!(
+            parse_version_from_tag("@scope/package@1.2.3"),
+            Some(Version::parse("1.2.3").unwrap())
+        );
+        // Test zod's tag format (v4.x.y)
+        assert_eq!(
+            parse_version_from_tag("v4.3.5"),
+            Some(Version::parse("4.3.5").unwrap())
+        );
+        assert_eq!(
+            parse_version_from_tag("v3.22.4"),
+            Some(Version::parse("3.22.4").unwrap())
+        );
+    }
+
+    #[test]
+    fn test_extract_changelog_sections_since_version() {
+        let content = r#"# Changelog
+
+## 19.2.1 (Dec 3, 2025)
+
+### React Server Components
+
+- Bring React Server Component fixes
+
+## 19.2.0 (October 1st, 2025)
+
+Below is a list of all new features
+
+## 19.1.2 (Dec 3, 2025)
+
+### React Server Components
+
+- Another fix
+
+## 19.1.1 (July 28, 2025)
+
+### React
+* Fixed Owner Stacks
+
+## 19.1.0 (March 28, 2025)
+
+misc.
+"#;
+
+        let entries = extract_changelog_sections_since_version(content, "19.1.0", "19.2.1");
+        
+        assert_eq!(entries.len(), 4); // 19.2.1, 19.2.0, 19.1.2, 19.1.1 (not 19.1.0)
+        assert_eq!(entries[0].version, Version::parse("19.2.1").unwrap());
+        assert_eq!(entries[1].version, Version::parse("19.2.0").unwrap());
+        assert_eq!(entries[2].version, Version::parse("19.1.2").unwrap());
+        assert_eq!(entries[3].version, Version::parse("19.1.1").unwrap());
+    }
+
+    #[test]
+    fn test_extract_changelog_sections_truncation() {
+        let content = r#"
+## 10.0.0
+Major release
+
+## 9.0.0
+Major release
+
+## 8.0.0
+Major release
+
+## 7.0.0
+Major release
+
+## 6.0.0
+Major release
+
+## 5.0.0
+Major release
+
+## 4.0.0
+Major release
+
+## 3.0.0
+Major release
+"#;
+
+        let entries = extract_changelog_sections_since_version(content, "1.0.0", "10.0.0");
+        
+        // All 8 versions should be included (10, 9, 8, 7, 6, 5, 4, 3) since MAX is now 15
+        assert_eq!(entries.len(), 8);
+        assert_eq!(entries[0].version, Version::parse("10.0.0").unwrap());
+        assert_eq!(entries[7].version, Version::parse("3.0.0").unwrap());
     }
 }
