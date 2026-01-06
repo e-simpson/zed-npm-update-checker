@@ -19,23 +19,23 @@ jobs:
           # macOS Apple Silicon
           - os: macos-latest
             target: aarch64-apple-darwin
-            asset_name: npm-update-checker-lsp-darwin-arm64.tar.gz
+            asset_name: npm-package-json-checker-lsp-darwin-arm64.tar.gz
           # macOS Intel
           - os: macos-latest
             target: x86_64-apple-darwin
-            asset_name: npm-update-checker-lsp-darwin-amd64.tar.gz
+            asset_name: npm-package-json-checker-lsp-darwin-amd64.tar.gz
           # Linux x86_64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            asset_name: npm-update-checker-lsp-linux-amd64.tar.gz
+            asset_name: npm-package-json-checker-lsp-linux-amd64.tar.gz
           # Linux ARM64
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
-            asset_name: npm-update-checker-lsp-linux-arm64.tar.gz
+            asset_name: npm-package-json-checker-lsp-linux-arm64.tar.gz
           # Windows x86_64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            asset_name: npm-update-checker-lsp-windows-amd64.zip
+            asset_name: npm-package-json-checker-lsp-windows-amd64.zip
 
     steps:
       - name: Checkout
@@ -54,20 +54,20 @@ jobs:
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
 
       - name: Build LSP binary
-        run: cargo build --release --package npm-update-checker-lsp --target ${{ matrix.target }}
+        run: cargo build --release --package npm-package-json-checker-lsp --target ${{ matrix.target }}
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
-          tar -czvf ../../../${{ matrix.asset_name }} npm-update-checker-lsp
+          tar -czvf ../../../${{ matrix.asset_name }} npm-package-json-checker-lsp
           cd ../../..
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
-          Compress-Archive -Path npm-update-checker-lsp.exe -DestinationPath ../../../${{ matrix.asset_name }}
+          Compress-Archive -Path npm-package-json-checker-lsp.exe -DestinationPath ../../../${{ matrix.asset_name }}
           cd ../../..
 
       - name: Upload artifact

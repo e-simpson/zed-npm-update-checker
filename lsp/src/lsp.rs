@@ -13,7 +13,7 @@ use crate::registry::{check_version_status, NpmRegistry, VersionStatus};
 #[allow(unused_imports)]
 use crate::registry::UpdateSeverity;
 
-const LSP_NAME: &str = "npm-update-checker-lsp";
+const LSP_NAME: &str = "npm-package-json-checker-lsp";
 
 /// State of a dependency check
 #[derive(Debug, Clone)]
@@ -107,8 +107,8 @@ impl Backend {
                 // Step 1: Get version info from npm registry
                 let version_info = registry.get_package_version_info(&dep_name).await;
                 
-                // Step 2: If there's an update with a repo, fetch the changelog too
-                let (status, changelog) = if let Some(ref pkg_info) = version_info {
+                // Step 2: Check version status and fetch changelog if repo URL exists
+                let final_status = if let Some(ref pkg_info) = version_info {
                     if !dep_clean_version.is_empty() {
                         let temp_status = check_version_status(
                             &dep_clean_version,
@@ -117,42 +117,60 @@ impl Backend {
                             pkg_info.repository_url.clone(),
                         );
                         
-                        // Fetch changelog if there's an update and a repo URL
-                        let changelog = if let VersionStatus::UpdateAvailable { 
-                            ref latest, 
-                            repository_url: Some(ref repo_url), 
-                            .. 
-                        } = temp_status {
+                        // Fetch changelog if there's a repo URL (regardless of update status)
+                        let changelog = if let Some(ref repo_url) = pkg_info.repository_url {
+                            // For UpToDate, use current version as both current and latest
+                            // For UpdateAvailable, use the latest version
+                            let latest_for_changelog = match &temp_status {
+                                VersionStatus::UpdateAvailable { latest, .. } => latest.clone(),
+                                _ => dep_clean_version.clone(),
+                            };
+                            
                             registry.fetch_changelog_for_package(
                                 &dep_name,
                                 &dep_clean_version,
-                                latest,
+                                &latest_for_changelog,
                                 repo_url,
                             ).await
                         } else {
                             None
                         };
                         
-                        (Some(temp_status), changelog)
+                        // Build final status with changelog
+                        match temp_status {
+                            VersionStatus::UpdateAvailable { latest, severity, repository_url, .. } => {
+                                VersionStatus::UpdateAvailable {
+                                    latest,
+                                    severity,
+                                    changelog,
+                                    repository_url,
+                                }
+                            }
+                            VersionStatus::UpToDate { .. } => {
+                                VersionStatus::UpToDate {
+                                    changelog,
+                                    repository_url: pkg_info.repository_url.clone(),
+                                }
+                            }
+                            VersionStatus::Unknown { .. } => {
+                                VersionStatus::Unknown {
+                                    changelog,
+                                    repository_url: pkg_info.repository_url.clone(),
+                                }
+                            }
+                            other => other,
+                        }
                     } else {
-                        (Some(VersionStatus::Unknown), None)
-                    }
-                } else {
-                    (None, None)
-                };
-                
-                // Build final status with changelog
-                let final_status = match status {
-                    Some(VersionStatus::UpdateAvailable { latest, severity, repository_url, .. }) => {
-                        VersionStatus::UpdateAvailable {
-                            latest,
-                            severity,
-                            changelog,
-                            repository_url,
+                        VersionStatus::Unknown {
+                            changelog: None,
+                            repository_url: pkg_info.repository_url.clone(),
                         }
                     }
-                    Some(other) => other,
-                    None => VersionStatus::Unknown,
+                } else {
+                    VersionStatus::Unknown {
+                        changelog: None,
+                        repository_url: None,
+                    }
                 };
                 
                 (dep_name, final_status)
@@ -188,13 +206,6 @@ impl Backend {
         for dep in &state.dependencies {
             if let Some(CheckState::Done(status)) = state.check_states.get(&dep.name) {
                 if let VersionStatus::UpdateAvailable { latest, severity, .. } = status {
-                    // Severity levels: Patch → INFO, Minor → WARNING, Major → ERROR
-                    // let severity_level = match severity {
-                    //     UpdateSeverity::Major => DiagnosticSeverity::ERROR,
-                    //     UpdateSeverity::Minor => DiagnosticSeverity::WARNING,
-                    //     UpdateSeverity::Patch => DiagnosticSeverity::INFORMATION,
-                    // };
-
                     diagnostics.push(Diagnostic {
                         range: Range {
                             start: Position {
@@ -389,6 +400,30 @@ fn clean_repo_url(url: &str) -> String {
         .to_string()
 }
 
+/// Extract owner/repo from GitHub URL for display
+fn extract_github_owner_repo(url: &str) -> Option<(String, String)> {
+    let url = url
+        .trim()
+        .trim_start_matches("git+")
+        .trim_start_matches("git://")
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_start_matches("ssh://git@")
+        .trim_start_matches("git@")
+        .trim_end_matches(".git")
+        .trim_end_matches('/');
+
+    // Handle github.com/owner/repo format
+    if let Some(rest) = url.strip_prefix("github.com/").or_else(|| url.strip_prefix("github.com:")) {
+        let parts: Vec<&str> = rest.split('/').collect();
+        if parts.len() >= 2 {
+            return Some((parts[0].to_string(), parts[1].to_string()));
+        }
+    }
+
+    None
+}
+
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
@@ -487,26 +522,54 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        // Find if we're hovering over a dependency line
+        // Find if we're hovering over a dependency line (package name or version)
         for dep in &state.dependencies {
-            if dep.line == position.line && 
-               position.character >= dep.version_start_col && 
-               position.character <= dep.version_end_col {
-                if let Some(CheckState::Done(VersionStatus::UpdateAvailable { latest: _, severity: _, changelog, repository_url })) = state.check_states.get(&dep.name) {
+            // Check if cursor is on the package name OR version string
+            let on_name = position.character >= dep.name_start_col && 
+                          position.character <= dep.name_end_col;
+            let on_version = position.character >= dep.version_start_col && 
+                             position.character <= dep.version_end_col;
+            
+            if dep.line == position.line && (on_name || on_version) {
+                if let Some(CheckState::Done(status)) = state.check_states.get(&dep.name) {
+                    // Extract changelog and repository_url from any status variant
+                    let (changelog, repository_url) = match status {
+                        VersionStatus::UpdateAvailable { changelog, repository_url, .. } => {
+                            (changelog.clone(), repository_url.clone())
+                        }
+                        VersionStatus::UpToDate { changelog, repository_url } => {
+                            (changelog.clone(), repository_url.clone())
+                        }
+                        VersionStatus::Unknown { changelog, repository_url } => {
+                            (changelog.clone(), repository_url.clone())
+                        }
+                        _ => (None, None),
+                    };
+                    
                     // Build hover content based on what's available
                     let content = match (changelog, repository_url) {
                         (Some(cl), Some(repo)) => {
-                            let clean_url = clean_repo_url(repo);
-                            format!("[View on GitHub]({})\n\n---\n\n{}", clean_url, cl)
+                            let clean_url = clean_repo_url(&repo);
+                            let link_text = if let Some((owner, repo_name)) = extract_github_owner_repo(&repo) {
+                                format!("View on GitHub: {}/{}", owner, repo_name)
+                            } else {
+                                "View on GitHub".to_string()
+                            };
+                            format!("[{}]({})\n\n---\n\n{}", link_text, clean_url, cl)
                         }
                         (Some(cl), None) => {
                             cl.clone()
                         }
                         (None, Some(repo)) => {
-                            let clean_url = clean_repo_url(repo);
+                            let clean_url = clean_repo_url(&repo);
+                            let link_text = if let Some((owner, repo_name)) = extract_github_owner_repo(&repo) {
+                                format!("View on GitHub: {}/{}", owner, repo_name)
+                            } else {
+                                "View on GitHub".to_string()
+                            };
                             format!(
-                                "*Changelog not available.*\n\n[View on GitHub]({})",
-                                clean_url
+                                "*Changelog not available.*\n\n[{}]({})",
+                                link_text, clean_url
                             )
                         }
                         (None, None) => {
@@ -520,7 +583,7 @@ impl LanguageServer for Backend {
                             value: content,
                         }),
                         range: Some(Range {
-                            start: Position { line: dep.line, character: dep.version_start_col },
+                            start: Position { line: dep.line, character: dep.name_start_col },
                             end: Position { line: dep.line, character: dep.version_end_col },
                         }),
                     }));

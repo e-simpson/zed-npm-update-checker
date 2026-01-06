@@ -6,9 +6,9 @@ const GITHUB_REPO: &str = "e-simpson/zed-npm-update-checker";
 #[inline]
 fn bin_name() -> &'static str {
     if zed::current_platform().0 == zed::Os::Windows {
-        "npm-update-checker-lsp.exe"
+        "npm-package-json-checker-lsp.exe"
     } else {
-        "npm-update-checker-lsp"
+        "npm-package-json-checker-lsp"
     }
 }
 
@@ -95,7 +95,7 @@ impl NpmUpdatesExtension {
         )?;
 
         let asset_name = format!(
-            "npm-update-checker-lsp-{os}-{arch}.{ext}",
+            "npm-package-json-checker-lsp-{os}-{arch}.{ext}",
             arch = match arch {
                 zed::Architecture::Aarch64 => "arm64",
                 zed::Architecture::X86 => "amd64",
@@ -117,7 +117,7 @@ impl NpmUpdatesExtension {
             _ => zed::DownloadedFileType::GzipTar,
         };
 
-        let version_dir = format!("npm-update-checker-lsp-{}", release.version);
+        let version_dir = format!("npm-package-json-checker-lsp-{}", release.version);
         let bin_name = bin_name();
         let version_binary_path = format!("{version_dir}/{bin_name}");
 

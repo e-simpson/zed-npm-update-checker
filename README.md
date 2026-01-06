@@ -2,10 +2,10 @@
     <img src="./images/icon.png" width="100" alt="Logo"/>
     <h3 align="center">NPM Update Checker for <a href="https://zed.dev/">Zed IDE</a></h3>
     <p align="center">
-	Show outdated npm packages and changelogs in package.json files minimalistically.
-      <br><br>
-		<a href="https://github.com/e-simpson/zed-npm-update-checker"><img src="https://img.shields.io/github/stars/e-simpson/zed-npm-update-checker"></a>
-        </p>
+	    Show outdated npm packages and changelogs in package.json files minimalistically using a Rust LSP.
+        <br><br>
+        <a href="https://github.com/e-simpson/zed-npm-update-checker"><img src="https://img.shields.io/github/stars/e-simpson/zed-npm-update-checker"></a>
+    </p>
     </p>
 </p>
 
@@ -18,8 +18,9 @@
 - 🔧 Offers auto-complete to update the package
 - 📚 Distinguishes between major, minor, and patch updates
 
-### Important Note
-For the inlay progress indicator, enable them in Zed settings:
+### Loading Indicator
+<img src="./images/inlay.png"/>
+For an inlay loading indicator, enable inlay hints in Zed:
 ```json
 // settings.json
 {
@@ -38,8 +39,8 @@ For the inlay progress indicator, enable them in Zed settings:
 1. Clone this repository
 2. Build the LSP:
    ```bash
-   cargo build --release -p npm-update-checker-lsp
-   cp target/release/npm-update-checker-lsp .
+   cargo build --release -p npm-package-json-checker-lsp
+   cp target/release/npm-package-json-checker-lsp .
    ```
 3. In Zed: Command Palette → "zed: install dev extension" → select this directory
 

@@ -14,6 +14,10 @@ pub struct Dependency {
     pub version_position: Position,
     /// Line containing this dependency
     pub line: u32,
+    /// Start column of the package name (excluding quotes)
+    pub name_start_col: u32,
+    /// End column of the package name (excluding quotes)
+    pub name_end_col: u32,
     /// Start column of the version value (excluding quotes)
     pub version_start_col: u32,
     /// End column of the version value (excluding quotes)
@@ -121,6 +125,10 @@ fn find_dependency_position(
             // Look for the package name in this line
             let name_pattern = format!("\"{}\"", name);
             if let Some(name_pos) = line.find(&name_pattern) {
+                // Calculate name column positions (inside quotes)
+                let name_start = name_pos + 1; // +1 for opening quote
+                let name_end = name_start + name.len();
+                
                 // Find the version string after the name
                 let after_name = &line[name_pos + name_pattern.len()..];
                 
@@ -139,6 +147,8 @@ fn find_dependency_position(
                             character: version_start as u32,
                         },
                         line: line_idx as u32,
+                        name_start_col: name_start as u32,
+                        name_end_col: name_end as u32,
                         version_start_col: version_start as u32,
                         version_end_col: version_end as u32,
                         dep_type,

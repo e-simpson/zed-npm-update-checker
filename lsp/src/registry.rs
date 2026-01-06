@@ -82,7 +82,10 @@ pub enum VersionStatus {
     /// Currently checking version
     Checking,
     /// Package is up to date
-    UpToDate,
+    UpToDate {
+        changelog: Option<String>,
+        repository_url: Option<String>,
+    },
     /// Update available with severity, changelog, and repository URL
     UpdateAvailable {
         latest: String,
@@ -91,7 +94,10 @@ pub enum VersionStatus {
         repository_url: Option<String>,
     },
     /// Could not determine (invalid version, fetch failed, etc.)
-    Unknown,
+    Unknown {
+        changelog: Option<String>,
+        repository_url: Option<String>,
+    },
 }
 
 /// A single changelog entry with version and content
@@ -177,7 +183,7 @@ impl NpmRegistry {
     pub fn new() -> Self {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(15))
-            .user_agent("npm-update-checker-lsp")
+            .user_agent("npm-package-json-checker-lsp")
             .build()
             .unwrap_or_default();
 
@@ -876,16 +882,25 @@ fn merge_changelogs(
 pub fn check_version_status(current: &str, latest: &str, changelog: Option<String>, repository_url: Option<String>) -> VersionStatus {
     let current_parsed = match Version::parse(current) {
         Ok(v) => v,
-        Err(_) => return VersionStatus::Unknown,
+        Err(_) => return VersionStatus::Unknown {
+            changelog,
+            repository_url,
+        },
     };
 
     let latest_parsed = match Version::parse(latest) {
         Ok(v) => v,
-        Err(_) => return VersionStatus::Unknown,
+        Err(_) => return VersionStatus::Unknown {
+            changelog,
+            repository_url,
+        },
     };
 
     if latest_parsed <= current_parsed {
-        return VersionStatus::UpToDate;
+        return VersionStatus::UpToDate {
+            changelog,
+            repository_url,
+        };
     }
 
     // Determine severity
@@ -911,10 +926,10 @@ mod tests {
 
     #[test]
     fn test_version_status() {
-        assert_eq!(
-            check_version_status("1.0.0", "1.0.0", None, None),
-            VersionStatus::UpToDate
-        );
+        match check_version_status("1.0.0", "1.0.0", None, None) {
+            VersionStatus::UpToDate { .. } => {},
+            _ => panic!("Expected UpToDate"),
+        }
         
         match check_version_status("1.0.0", "1.0.1", None, None) {
             VersionStatus::UpdateAvailable { severity, .. } => {
@@ -1001,7 +1016,7 @@ mod tests {
     async fn test_github_atom_feed() {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
-            .user_agent("npm-update-checker-lsp")
+            .user_agent("npm-package-json-checker-lsp")
             .build()
             .unwrap();
         

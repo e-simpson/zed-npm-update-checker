@@ -18,8 +18,8 @@ impl NpmUpdatesExtension {
 
         let (platform, _arch) = zed::current_platform();
         let binary_name = match platform {
-            zed::Os::Windows => "npm-update-checker-lsp.exe",
-            _ => "npm-update-checker-lsp",
+            zed::Os::Windows => "npm-package-json-checker-lsp.exe",
+            _ => "npm-package-json-checker-lsp",
         };
 
         // Check various locations for the binary
@@ -27,7 +27,7 @@ impl NpmUpdatesExtension {
             binary_name.to_string(),
             format!("./{}", binary_name),
             format!("bin/{}", binary_name),
-            format!("npm-update-checker-lsp/{}", binary_name),
+            format!("npm-package-json-checker-lsp/{}", binary_name),
         ];
 
         for path in &search_paths {
@@ -41,12 +41,12 @@ impl NpmUpdatesExtension {
         update_status(
             id,
             Status::Failed(
-                "npm-update-checker-lsp binary not found. Build with: cargo build --release -p npm-update-checker-lsp"
+                "npm-package-json-checker-lsp binary not found. Build with: cargo build --release -p npm-package-json-checker-lsp"
                     .to_string(),
             ),
         );
 
-        Err("npm-update-checker-lsp binary not found. Build with: cargo build --release -p npm-update-checker-lsp".into())
+        Err("npm-package-json-checker-lsp binary not found. Build with: cargo build --release -p npm-package-json-checker-lsp".into())
     }
 }
 
