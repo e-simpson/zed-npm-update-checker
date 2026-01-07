@@ -2,7 +2,7 @@
     <img src="./images/icon.png" width="100" alt="Logo"/>
     <h3 align="center">NPM Update Checker for <a href="https://zed.dev/">Zed IDE</a></h3>
     <p align="center">
-	    Show outdated npm packages and changelogs in package.json files minimalistically using a Rust LSP.
+	    Highlights outdated npm packages and changelogs in package.json files minimalistically using a Rust LSP.
         <br><br>
         <a href="https://github.com/e-simpson/zed-npm-update-checker"><img src="https://img.shields.io/github/stars/e-simpson/zed-npm-update-checker"></a>
     </p>
@@ -12,14 +12,16 @@
 <img src="./images/screenshot.png"/>
 
 ### Features
-
 - 📥 Highlights outdated packages in package.json files
-- 🔍 Changelog between current version and latest version (intelligently parsing GitHub releases and/or CHANGELOG.md directly - no api calls)
+- 🔍 Changelog between current version and latest version 
+    - Parses and combines GitHub releases and/or CHANGELOG.md
+    - Shows changes from current to latest if possible
+    - Goes direct without API calls with rate limits    
 - 🔧 Offers auto-complete to update the package
 - 📚 Distinguishes between major, minor, and patch updates
 
 ### Loading Indicator
-<img src="./images/inlay.png"/>
+<img src="./images/inlay.png" width="300"/>
 For an inlay loading indicator, enable inlay hints in Zed:
 ```json
 // settings.json
