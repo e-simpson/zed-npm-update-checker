@@ -1,6 +1,6 @@
 [package]
 name = "npm-package-json-checker-lsp"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 license = "MIT"
 description =  "📥 LSP to highlight outdated npm packages and shows changelogs in package.json files. \nAuto-fetches changelogs from GitHub releases and/or CHANGELOG.md. Shown minimalistically without UI bloat."
@@ -22,5 +22,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 futures = "0.3"
 regex = "1"
 lazy_static = "1.4"
-
-
+chrono = { version = "0.4", features = ["serde"] }

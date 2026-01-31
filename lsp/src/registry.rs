@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -24,7 +25,7 @@ lazy_static! {
     static ref VERSION_HEADER_REGEX: Regex = Regex::new(
         r"(?i)^#{1,2}\s*\[?v?(\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+[\w.]+)?)\]?"
     ).unwrap();
-    
+
     /// Regex to extract standard semver from git tags
     /// Matches various tag formats:
     /// - v1.0.0
@@ -35,18 +36,18 @@ lazy_static! {
     static ref VERSION_TAG_REGEX: Regex = Regex::new(
         r"(?:^v|@|^)(\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+[\w.]+)?)$"
     ).unwrap();
-    
+
     /// Regex to extract semver from anywhere in a string (for monorepo titles)
     /// Matches: "oxlint v1.2.3 & oxfmt v4.5.6" -> extracts "1.2.3"
     static ref VERSION_ANYWHERE_REGEX: Regex = Regex::new(
         r"v?(\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+[\w.]+)?)"
     ).unwrap();
-    
+
     /// Regex for non-standard version formats like three.js "r182"
     static ref REVISION_TAG_REGEX: Regex = Regex::new(
         r"^r(\d+)$"
     ).unwrap();
-    
+
     /// Regex to extract entries from GitHub releases atom feed
     /// Captures: title (version tag) and content (release body in HTML)
     static ref ATOM_ENTRY_REGEX: Regex = Regex::new(
@@ -57,11 +58,11 @@ lazy_static! {
 /// Severity of version update
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateSeverity {
-    /// Major version bump (breaking changes) - e.g., 1.x.x → 2.x.x
+    /// Major version bump (breaking changes) - e.g., 1.x.x -> 2.x.x
     Major,
-    /// Minor version bump (new features) - e.g., 1.1.x → 1.2.x
+    /// Minor version bump (new features) - e.g., 1.1.x -> 1.2.x
     Minor,
-    /// Patch version bump (bug fixes) - e.g., 1.1.1 → 1.1.2
+    /// Patch version bump (bug fixes) - e.g., 1.1.1 -> 1.1.2
     Patch,
 }
 
@@ -76,6 +77,23 @@ impl UpdateSeverity {
     }
 }
 
+/// Information about a specific track
+#[derive(Debug, Clone)]
+pub struct TrackInfo {
+    pub name: String,
+    pub version: String,
+    pub release_date: Option<DateTime<Utc>>,
+}
+
+/// Information about an alternative track update
+#[derive(Debug, Clone, PartialEq)]
+pub struct TrackUpdate {
+    pub name: String,
+    pub version: String,
+    pub release_date: Option<DateTime<Utc>>,
+    pub is_newer: bool,
+}
+
 /// Result of comparing current version to latest
 #[derive(Debug, Clone, PartialEq)]
 pub enum VersionStatus {
@@ -83,18 +101,27 @@ pub enum VersionStatus {
     Checking,
     /// Package is up to date
     UpToDate {
+        current_track: String,
+        current_version: String,
+        other_tracks: Vec<TrackUpdate>,
         changelog: Option<String>,
         repository_url: Option<String>,
     },
     /// Update available with severity, changelog, and repository URL
     UpdateAvailable {
-        latest: String,
+        current_track: String,
+        current_version: String,
+        latest_on_track: String,
+        other_tracks: Vec<TrackUpdate>,
         severity: UpdateSeverity,
         changelog: Option<String>,
         repository_url: Option<String>,
     },
     /// Could not determine (invalid version, fetch failed, etc.)
     Unknown {
+        current_track: String,
+        current_version: String,
+        other_tracks: Vec<TrackUpdate>,
         changelog: Option<String>,
         repository_url: Option<String>,
     },
@@ -106,15 +133,6 @@ struct ChangelogEntry {
     version: Version,
     version_string: String,
     body: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct PackageInfo {
-    pub name: String,
-    pub latest_version: String,
-    pub repository_url: Option<String>,
-    pub changelog: Option<String>,
-    pub fetched_at: Instant,
 }
 
 /// Cache key includes both package name and current version for changelog relevance
@@ -130,12 +148,30 @@ struct VersionCacheKey {
     package_name: String,
 }
 
+/// Full package info with track information
+#[derive(Debug, Clone)]
+pub struct PackageInfo {
+    pub name: String,
+    pub current_track: String,
+    pub current_version: String,
+    pub latest_on_track: String,
+    pub all_tracks: Vec<TrackInfo>,
+    pub repository_url: Option<String>,
+    pub repository_directory: Option<String>,
+    pub changelog: Option<String>,
+    pub fetched_at: Instant,
+}
+
 /// Lightweight package info without changelog (for fast initial display)
 #[derive(Debug, Clone)]
 pub struct PackageVersionInfo {
     pub name: String,
-    pub latest_version: String,
+    pub current_track: String,
+    pub current_version: String,
+    pub latest_on_track: String,
+    pub all_tracks: Vec<TrackInfo>,
     pub repository_url: Option<String>,
+    pub repository_directory: Option<String>,
     pub fetched_at: Instant,
 }
 
@@ -144,18 +180,26 @@ struct NpmPackageResponse {
     #[serde(rename = "dist-tags")]
     dist_tags: Option<DistTags>,
     repository: Option<Repository>,
+    time: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Deserialize)]
 struct DistTags {
     latest: Option<String>,
+    #[serde(flatten)]
+    other_tags: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum Repository {
     String(String),
-    Object { url: Option<String>, #[serde(rename = "type")] repo_type: Option<String> },
+    Object {
+        url: Option<String>,
+        #[serde(rename = "type")]
+        repo_type: Option<String>,
+        directory: Option<String>,
+    },
 }
 
 impl Repository {
@@ -165,9 +209,14 @@ impl Repository {
             Repository::Object { url, .. } => url.clone(),
         }
     }
-}
 
-// Note: GitHubRelease struct removed - we now use the atom feed instead of the API
+    fn get_directory(&self) -> Option<String> {
+        match self {
+            Repository::String(_) => None,
+            Repository::Object { directory, .. } => directory.clone(),
+        }
+    }
+}
 
 pub struct NpmRegistry {
     client: reqwest::Client,
@@ -194,10 +243,14 @@ impl NpmRegistry {
             semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_REQUESTS)),
         }
     }
-    
+
     /// Fast version check - only fetches npm registry, no GitHub API calls
     /// Use this for initial display of updates, then fetch changelogs separately
-    pub async fn get_package_version_info(&self, package_name: &str) -> Option<PackageVersionInfo> {
+    pub async fn get_package_version_info(
+        &self,
+        package_name: &str,
+        current_version: &str,
+    ) -> Option<PackageVersionInfo> {
         let cache_key = VersionCacheKey {
             package_name: package_name.to_string(),
         };
@@ -214,7 +267,7 @@ impl NpmRegistry {
 
         // Fetch from npm registry only
         let url = format!("{}/{}", NPM_REGISTRY_URL, package_name);
-        
+
         let response = match self.client.get(&url).send().await {
             Ok(r) => r,
             Err(e) => {
@@ -236,13 +289,23 @@ impl NpmRegistry {
             }
         };
 
-        let latest = data.dist_tags.and_then(|t| t.latest)?;
-        let repo_url = data.repository.and_then(|r| r.get_url());
+        let dist_tags = data.dist_tags?;
+        let current_track = detect_track(current_version, &dist_tags);
+        let latest_on_track = get_version_for_track(&dist_tags, &current_track)?;
+
+        let all_tracks = build_track_info(&dist_tags, data.time.as_ref());
+
+        let repo_url = data.repository.as_ref().and_then(|r| r.get_url());
+        let repo_directory = data.repository.as_ref().and_then(|r| r.get_directory());
 
         let info = PackageVersionInfo {
             name: package_name.to_string(),
-            latest_version: latest,
+            current_track,
+            current_version: current_version.to_string(),
+            latest_on_track,
+            all_tracks,
             repository_url: repo_url,
+            repository_directory: repo_directory,
             fetched_at: Instant::now(),
         };
 
@@ -251,7 +314,7 @@ impl NpmRegistry {
 
         Some(info)
     }
-    
+
     /// Fetch changelog for a package (makes GitHub API calls - rate limited!)
     /// Call this after get_package_version_info, with delays between calls
     pub async fn fetch_changelog_for_package(
@@ -260,6 +323,7 @@ impl NpmRegistry {
         current_version: &str,
         latest_version: &str,
         repo_url: &str,
+        repo_directory: Option<&str>,
     ) -> Option<String> {
         let cache_key = CacheKey {
             package_name: package_name.to_string(),
@@ -274,13 +338,17 @@ impl NpmRegistry {
         }
 
         // Fetch changelog from GitHub
-        let changelog = self.fetch_changelog(repo_url, current_version, latest_version).await;
-        
+        let changelog = self.fetch_changelog(repo_url, repo_directory, current_version, latest_version).await;
+
         // Update full cache with changelog
         let info = PackageInfo {
             name: package_name.to_string(),
-            latest_version: latest_version.to_string(),
+            current_track: String::new(),
+            current_version: current_version.to_string(),
+            latest_on_track: latest_version.to_string(),
+            all_tracks: vec![],
             repository_url: Some(repo_url.to_string()),
+            repository_directory: repo_directory.map(|s| s.to_string()),
             changelog: changelog.clone(),
             fetched_at: Instant::now(),
         };
@@ -288,9 +356,13 @@ impl NpmRegistry {
 
         changelog
     }
-    
+
     /// Get full package info including changelog filtered by current version
-    pub async fn get_package_info(&self, package_name: &str, current_version: &str) -> Option<PackageInfo> {
+    pub async fn get_package_info(
+        &self,
+        package_name: &str,
+        current_version: &str,
+    ) -> Option<PackageInfo> {
         let cache_key = CacheKey {
             package_name: package_name.to_string(),
             current_version: current_version.to_string(),
@@ -309,9 +381,9 @@ impl NpmRegistry {
 
         // Fetch from registry
         let url = format!("{}/{}", NPM_REGISTRY_URL, package_name);
-        
+
         debug!("Fetching {}", url);
-        
+
         let response = match self.client.get(&url).send().await {
             Ok(r) => r,
             Err(e) => {
@@ -333,20 +405,30 @@ impl NpmRegistry {
             }
         };
 
-        let latest = data.dist_tags.and_then(|t| t.latest)?;
-        let repo_url = data.repository.and_then(|r| r.get_url());
-        
+        let dist_tags = data.dist_tags?;
+        let current_track = detect_track(current_version, &dist_tags);
+        let latest_on_track = get_version_for_track(&dist_tags, &current_track)?;
+
+        let all_tracks = build_track_info(&dist_tags, data.time.as_ref());
+
+        let repo_url = data.repository.as_ref().and_then(|r| r.get_url());
+        let repo_directory = data.repository.as_ref().and_then(|r| r.get_directory());
+
         // Try to fetch changelog from GitHub with version range
         let changelog = if let Some(ref url) = repo_url {
-            self.fetch_changelog(url, current_version, &latest).await
+            self.fetch_changelog(url, repo_directory.as_deref(), current_version, &latest_on_track).await
         } else {
             None
         };
 
         let info = PackageInfo {
             name: package_name.to_string(),
-            latest_version: latest,
+            current_track,
+            current_version: current_version.to_string(),
+            latest_on_track,
+            all_tracks,
             repository_url: repo_url,
+            repository_directory: repo_directory,
             changelog,
             fetched_at: Instant::now(),
         };
@@ -358,7 +440,13 @@ impl NpmRegistry {
     }
 
     /// Fetch changelog from GitHub releases and CHANGELOG.md, merge both sources
-    async fn fetch_changelog(&self, repo_url: &str, current_version: &str, latest_version: &str) -> Option<String> {
+    async fn fetch_changelog(
+        &self,
+        repo_url: &str,
+        directory: Option<&str>,
+        current_version: &str,
+        latest_version: &str,
+    ) -> Option<String> {
         let (owner, repo) = match parse_github_url(repo_url) {
             Some(parsed) => parsed,
             None => {
@@ -366,21 +454,34 @@ impl NpmRegistry {
                 return None;
             }
         };
-        
-        debug!("Fetching changelog for {}/{}: {} -> {}", owner, repo, current_version, latest_version);
-        
-        // Fetch from both sources in parallel
-        let (releases_result, changelog_file_result) = tokio::join!(
-            self.fetch_github_releases(&owner, &repo, current_version, latest_version),
+
+        debug!("Fetching changelog for {}/{} (dir: {:?}): {} -> {}", owner, repo, directory, current_version, latest_version);
+
+        // Try package-specific changelog first if in monorepo
+        let monorepo_changelog = if let Some(dir) = directory {
+            self.fetch_monorepo_changelog(&owner, &repo, dir, current_version, latest_version)
+                .await
+        } else {
+            None
+        };
+
+        // Fetch root changelog as fallback
+        let (releases_result, root_changelog_result) = tokio::join!(
+            self.fetch_github_releases(&owner, &repo, current_version, latest_version, directory),
             self.fetch_changelog_file(&owner, &repo, current_version, latest_version)
         );
-        
-        debug!("GitHub releases found: {}, CHANGELOG.md sections found: {}", 
-               releases_result.len(), changelog_file_result.len());
-        
-        // Merge both sources
-        let merged = merge_changelogs(releases_result, changelog_file_result, current_version, latest_version);
-        
+
+        debug!("GitHub releases found: {}, CHANGELOG.md sections found: {}",
+               releases_result.len(), root_changelog_result.len());
+
+        // Merge all sources
+        let merged = if let Some(ref mono_cl) = monorepo_changelog {
+            // Use monorepo changelog if available
+            mono_cl.clone()
+        } else {
+            merge_changelogs(releases_result, root_changelog_result, current_version, latest_version)
+        };
+
         if merged.is_empty() {
             debug!("No changelog content after merge for {}/{}", owner, repo);
             None
@@ -390,6 +491,143 @@ impl NpmRegistry {
         }
     }
 
+    /// Fetch changelog from monorepo package directory
+    async fn fetch_monorepo_changelog(
+        &self,
+        owner: &str,
+        repo: &str,
+        directory: &str,
+        current_version: &str,
+        latest_version: &str,
+    ) -> Option<String> {
+        let files = ["CHANGELOG.md", "changelog.md", "HISTORY.md", "CHANGES.md"];
+        let branches = ["main", "master"];
+
+        // Try package-specific changelog paths
+        let paths = [
+            format!("packages/{}/{}", directory, files[0]),
+            format!("packages/{}/{}", directory, files[1]),
+            format!("packages/{}/{}", directory, files[2]),
+            format!("packages/{}/{}", directory, files[3]),
+            format!("{}/{}", directory, files[0]),
+            format!("{}/{}", directory, files[1]),
+            format!("{}/{}", directory, files[2]),
+            format!("{}/{}", directory, files[3]),
+        ];
+
+        for path in &paths {
+            for branch in &branches {
+                let url = format!(
+                    "https://raw.githubusercontent.com/{}/{}/{}/{}",
+                    owner, repo, branch, path
+                );
+
+                if let Ok(response) = self.client.get(&url).send().await {
+                    if response.status().is_success() {
+                        if let Ok(content) = response.text().await {
+                            let entries = extract_changelog_sections_since_version(
+                                &content,
+                                current_version,
+                                latest_version,
+                            );
+                            if !entries.is_empty() {
+                                debug!("Found monorepo changelog at {}", url);
+                                return Some(format_changelog_entries(entries));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Try GitHub releases with package-specific tags
+        let package_name = directory.split('/').last().unwrap_or(directory);
+        let releases = self.fetch_github_releases_with_prefix(
+            owner, repo, current_version, latest_version, package_name
+        ).await;
+
+        if !releases.is_empty() {
+            return Some(format_changelog_entries(releases));
+        }
+
+        None
+    }
+
+    /// Fetch GitHub releases with package name prefix (for monorepo tags like "package@version")
+    async fn fetch_github_releases_with_prefix(
+        &self,
+        owner: &str,
+        repo: &str,
+        current_version: &str,
+        latest_version: &str,
+        package_prefix: &str,
+    ) -> Vec<ChangelogEntry> {
+        let current_semver = Version::parse(current_version).ok();
+        let latest_semver = Version::parse(latest_version).ok();
+        let use_version_filtering = current_semver.is_some() && latest_semver.is_some();
+
+        let url = format!("https://github.com/{}/{}/releases.atom", owner, repo);
+
+        let response = match self.client.get(&url).send().await {
+            Ok(r) if r.status().is_success() => r,
+            _ => return vec![],
+        };
+
+        let content = match response.text().await {
+            Ok(c) => c,
+            Err(_) => return vec![],
+        };
+
+        let mut entries = Vec::new();
+        let prefix_patterns = [
+            format!("{}@", package_prefix),
+            format!("@scope/{}@", package_prefix), // Scoped packages
+        ];
+
+        for cap in ATOM_ENTRY_REGEX.captures_iter(&content) {
+            let title = cap.get(1).map(|m| m.as_str()).unwrap_or("");
+            let html_content = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+            let body = html_to_text(html_content);
+
+            if body.trim().is_empty() {
+                continue;
+            }
+
+            // Check if title starts with package prefix
+            let matches_prefix = prefix_patterns.iter().any(|p| title.starts_with(p));
+            if !matches_prefix {
+                continue;
+            }
+
+            if let Some(version) = parse_version_from_tag(title) {
+                if use_version_filtering {
+                    if let (Some(ref current), Some(ref latest)) = (&current_semver, &latest_semver) {
+                        if version > *current && version <= *latest {
+                            entries.push(ChangelogEntry {
+                                version,
+                                version_string: title.to_string(),
+                                body,
+                            });
+                        }
+                    }
+                } else {
+                    entries.push(ChangelogEntry {
+                        version,
+                        version_string: title.to_string(),
+                        body,
+                    });
+                }
+
+                if entries.len() >= MAX_CHANGELOG_VERSIONS {
+                    break;
+                }
+            }
+        }
+
+        entries.sort_by(|a, b| b.version.cmp(&a.version));
+        entries
+    }
+
     /// Fetch multiple release notes from GitHub releases atom feed (no API rate limits!)
     async fn fetch_github_releases(
         &self,
@@ -397,18 +635,19 @@ impl NpmRegistry {
         repo: &str,
         current_version: &str,
         latest_version: &str,
+        _directory: Option<&str>,
     ) -> Vec<ChangelogEntry> {
         // Try to parse current and latest versions (may fail for non-semver like r182)
         let current_semver = Version::parse(current_version).ok();
         let latest_semver = Version::parse(latest_version).ok();
-        
+
         let use_version_filtering = current_semver.is_some() && latest_semver.is_some();
 
         // Use the atom feed instead of API - no rate limits!
         let url = format!("https://github.com/{}/{}/releases.atom", owner, repo);
-        
+
         debug!("Fetching GitHub releases atom feed for {}/{}", owner, repo);
-        
+
         let response = match self.client.get(&url).send().await {
             Ok(r) if r.status().is_success() => r,
             Ok(r) => {
@@ -436,17 +675,17 @@ impl NpmRegistry {
         for cap in ATOM_ENTRY_REGEX.captures_iter(&content) {
             let title = cap.get(1).map(|m| m.as_str()).unwrap_or("");
             let html_content = cap.get(2).map(|m| m.as_str()).unwrap_or("");
-            
+
             // Convert HTML content to markdown-ish text
             let body = html_to_text(html_content);
-            
+
             if body.trim().is_empty() {
                 continue;
             }
-            
+
             // Try to parse version from title
             let parsed_version = parse_version_from_tag(title);
-            
+
             // Store in fallback entries (recent releases regardless of version)
             if fallback_entries.len() < MAX_CHANGELOG_VERSIONS {
                 // Use a dummy version for fallback entries if we can't parse one
@@ -457,20 +696,20 @@ impl NpmRegistry {
                     body: body.clone(),
                 });
             }
-            
+
             // Try version-based filtering if we have valid semver versions
             if use_version_filtering {
-                if let (Some(ref current), Some(ref latest), Some(ref version)) = 
-                    (&current_semver, &latest_semver, &parsed_version) 
+                if let (Some(ref current), Some(ref latest), Some(ref version)) =
+                    (&current_semver, &latest_semver, &parsed_version)
                 {
-                    // Filter: current < version <= latest
-                    if version > current && version <= latest {
+                    // Filter: current <= version <= latest (include current version)
+                    if version >= current && version <= latest {
                         entries.push(ChangelogEntry {
                             version: version.clone(),
                             version_string: title.to_string(),
                             body,
                         });
-                        
+
                         if entries.len() >= MAX_CHANGELOG_VERSIONS {
                             break;
                         }
@@ -485,7 +724,7 @@ impl NpmRegistry {
             entries.sort_by(|a, b| b.version.cmp(&a.version));
             entries
         } else if !fallback_entries.is_empty() {
-            debug!("Version filtering failed, using {} most recent releases for {}/{}", 
+            debug!("Version filtering failed, using {} most recent releases for {}/{}",
                    fallback_entries.len(), owner, repo);
             // Fallback entries are already in order (newest first from atom feed)
             fallback_entries
@@ -509,14 +748,14 @@ impl NpmRegistry {
         // Try common changelog file names
         let files = ["CHANGELOG.md", "changelog.md", "HISTORY.md", "CHANGES.md"];
         let branches = ["main", "master"];
-        
+
         for file in &files {
             for branch in &branches {
                 let url = format!(
                     "https://raw.githubusercontent.com/{}/{}/{}/{}",
                     owner, repo, branch, file
                 );
-                
+
                 if let Ok(response) = self.client.get(&url).send().await {
                     if response.status().is_success() {
                         if let Ok(content) = response.text().await {
@@ -545,6 +784,168 @@ impl Default for NpmRegistry {
     }
 }
 
+/// Detect which track the current version belongs to
+fn detect_track(current_version: &str, dist_tags: &DistTags) -> String {
+    // Check for exact match with any dist-tag
+    for (tag, version) in &dist_tags.other_tags {
+        if version == current_version {
+            return tag.clone();
+        }
+    }
+
+    // Check if latest matches
+    if let Some(ref latest) = dist_tags.latest {
+        if latest == current_version {
+            return "latest".to_string();
+        }
+    }
+
+    // Check if it's a pre-release version that might indicate the track
+    if current_version.contains('-') {
+        let prerelease_part = current_version.split('-').nth(1).unwrap_or("");
+        let tag_name = prerelease_part.split('.').next().unwrap_or("");
+
+        if !tag_name.is_empty() && dist_tags.other_tags.contains_key(tag_name) {
+            return tag_name.to_string();
+        }
+
+        // If the prerelease identifier doesn't match a tag directly,
+        // check if the version pattern matches any track's version pattern
+        // e.g., 55.0.0-beta.1 should match next: 55.0.0-beta.3
+        if let Ok(current_ver) = Version::parse(current_version) {
+            for (tag, track_version) in &dist_tags.other_tags {
+                if let Ok(track_ver) = Version::parse(track_version) {
+                    // Check if major.minor.patch match and both have prerelease
+                    if current_ver.major == track_ver.major
+                        && current_ver.minor == track_ver.minor
+                        && current_ver.patch == track_ver.patch
+                        && track_ver.pre.is_empty() == current_ver.pre.is_empty()
+                    {
+                        return tag.clone();
+                    }
+                }
+            }
+        }
+    }
+
+    // Default to latest
+    "latest".to_string()
+}
+
+/// Get version for a specific track
+fn get_version_for_track(dist_tags: &DistTags, track: &str) -> Option<String> {
+    if track == "latest" {
+        dist_tags.latest.clone()
+    } else {
+        dist_tags.other_tags.get(track).cloned()
+    }
+}
+
+/// Build track info from dist-tags and release times
+fn build_track_info(
+    dist_tags: &DistTags,
+    time_data: Option<&HashMap<String, String>>,
+) -> Vec<TrackInfo> {
+    let mut tracks = Vec::new();
+
+    // Add latest first
+    if let Some(ref version) = dist_tags.latest {
+        let release_date = time_data.and_then(|t| {
+            t.get(version)
+                .and_then(|d| DateTime::parse_from_rfc3339(d).ok())
+                .map(|dt| dt.with_timezone(&Utc))
+        });
+
+        tracks.push(TrackInfo {
+            name: "latest".to_string(),
+            version: version.clone(),
+            release_date,
+        });
+    }
+
+    // Add other tags
+    for (name, version) in &dist_tags.other_tags {
+        let release_date = time_data.and_then(|t| {
+            t.get(version)
+                .and_then(|d| DateTime::parse_from_rfc3339(d).ok())
+                .map(|dt| dt.with_timezone(&Utc))
+        });
+
+        tracks.push(TrackInfo {
+            name: name.clone(),
+            version: version.clone(),
+            release_date,
+        });
+    }
+
+    // Sort by release date (newest first), then by version
+    tracks.sort_by(|a, b| {
+        match (b.release_date, a.release_date) {
+            (Some(b_date), Some(a_date)) => b_date.cmp(&a_date),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => {
+                // Fall back to version comparison
+                let a_ver = Version::parse(&a.version).ok();
+                let b_ver = Version::parse(&b.version).ok();
+                match (b_ver, a_ver) {
+                    (Some(bv), Some(av)) => bv.cmp(&av),
+                    _ => std::cmp::Ordering::Equal,
+                }
+            }
+        }
+    });
+
+    tracks
+}
+
+/// Format time ago string
+pub fn format_time_ago(date: DateTime<Utc>) -> String {
+    let now = Utc::now();
+    let duration = now.signed_duration_since(date);
+
+    if duration.num_days() > 365 {
+        let years = duration.num_days() / 365;
+        format!("{} year{} ago", years, if years == 1 { "" } else { "s" })
+    } else if duration.num_days() > 30 {
+        let months = duration.num_days() / 30;
+        format!("{} month{} ago", months, if months == 1 { "" } else { "s" })
+    } else if duration.num_days() > 7 {
+        let weeks = duration.num_days() / 7;
+        format!("{} week{} ago", weeks, if weeks == 1 { "" } else { "s" })
+    } else if duration.num_days() > 0 {
+        format!("{} day{} ago", duration.num_days(), if duration.num_days() == 1 { "" } else { "s" })
+    } else if duration.num_hours() > 0 {
+        format!("{} hour{} ago", duration.num_hours(), if duration.num_hours() == 1 { "" } else { "s" })
+    } else if duration.num_minutes() > 0 {
+        format!(
+            "{} minute{} ago",
+            duration.num_minutes(),
+            if duration.num_minutes() == 1 { "" } else { "s" }
+        )
+    } else {
+        "just now".to_string()
+    }
+}
+
+/// Format exact date for older releases
+pub fn format_exact_date(date: DateTime<Utc>) -> String {
+    date.format("%b %d, %Y").to_string()
+}
+
+/// Format date with time ago for display
+pub fn format_date_with_ago(date: DateTime<Utc>) -> String {
+    let now = Utc::now();
+    let duration = now.signed_duration_since(date);
+
+    if duration.num_days() > 90 {
+        // Older than 3 months, show exact date
+        format_exact_date(date)
+    } else {
+        format_time_ago(date)
+    }
+}
+
 /// Convert HTML content from atom feed to readable text
 fn html_to_text(html: &str) -> String {
     // Decode HTML entities
@@ -556,7 +957,7 @@ fn html_to_text(html: &str) -> String {
         .replace("&apos;", "'")
         .replace("&#39;", "'")
         .replace("&nbsp;", " ");
-    
+
     // Convert common HTML tags to markdown
     let text = text
         // Headings
@@ -593,11 +994,11 @@ fn html_to_text(html: &str) -> String {
         .replace("</em>", "*")
         .replace("<i>", "*")
         .replace("</i>", "*");
-    
+
     // Remove remaining HTML tags
     let mut result = String::new();
     let mut in_tag = false;
-    
+
     for c in text.chars() {
         match c {
             '<' => in_tag = true,
@@ -606,12 +1007,12 @@ fn html_to_text(html: &str) -> String {
             _ => {}
         }
     }
-    
+
     // Clean up excessive whitespace
     let lines: Vec<&str> = result.lines()
         .map(|l| l.trim())
         .collect();
-    
+
     lines.join("\n")
 }
 
@@ -662,7 +1063,7 @@ fn parse_version_from_tag(tag: &str) -> Option<Version> {
             }
         }
     }
-    
+
     // Handle monorepo tags like "package-name@1.0.0" or "@scope/package@1.0.0"
     if let Some(at_pos) = tag.rfind('@') {
         let version_part = &tag[at_pos + 1..];
@@ -671,7 +1072,7 @@ fn parse_version_from_tag(tag: &str) -> Option<Version> {
             return Some(v);
         }
     }
-    
+
     // Handle revision-style tags like "r182" (three.js)
     if let Some(cap) = REVISION_TAG_REGEX.captures(tag) {
         if let Some(m) = cap.get(1) {
@@ -681,7 +1082,7 @@ fn parse_version_from_tag(tag: &str) -> Option<Version> {
             }
         }
     }
-    
+
     // Try to find a semver anywhere in the string (for complex titles)
     // e.g., "oxlint v1.2.3 & oxfmt v4.5.6" -> extracts "1.2.3"
     if let Some(cap) = VERSION_ANYWHERE_REGEX.captures(tag) {
@@ -691,7 +1092,7 @@ fn parse_version_from_tag(tag: &str) -> Option<Version> {
             }
         }
     }
-    
+
     // Fall back to simple parsing (v1.0.0 or 1.0.0)
     let cleaned = tag.trim_start_matches('v');
     Version::parse(cleaned).ok()
@@ -712,7 +1113,7 @@ fn extract_changelog_sections_since_version(
     let mut entries = Vec::new();
     let mut fallback_entries = Vec::new(); // For when version filtering yields nothing
     let mut current_entry: Option<(Option<Version>, String, Vec<String>)> = None;
-    
+
     for line in content.lines() {
         // Check if this is a version header
         if line.starts_with("## ") || line.starts_with("# ") {
@@ -729,31 +1130,32 @@ fn extract_changelog_sections_since_version(
                             body: body.clone(),
                         });
                     }
-                    
+
                     // Add to filtered entries if version is in range
                     if use_version_filtering {
-                        if let (Some(ref current), Some(ref latest), Some(ref version)) = 
-                            (&current_semver, &latest_semver, &version_opt) 
+                        if let (Some(ref current), Some(ref latest), Some(ref version)) =
+                            (&current_semver, &latest_semver, &version_opt)
                         {
-                            if version > current && version <= latest {
+                            // Include current version too: current <= version <= latest
+                            if version >= current && version <= latest {
                                 entries.push(ChangelogEntry {
                                     version: version.clone(),
                                     version_string: header,
                                     body,
                                 });
-                            } else if version <= current {
+                            } else if version < current {
                                 // We've gone past the relevant versions in filtered mode
                                 break;
                             }
                         }
                     }
-                    
+
                     if entries.len() >= MAX_CHANGELOG_VERSIONS {
                         break;
                     }
                 }
             }
-            
+
             // Try to parse version from header, but continue even if it fails
             let version_opt = parse_version_from_header(line);
             current_entry = Some((version_opt, line.to_string(), Vec::new()));
@@ -761,7 +1163,7 @@ fn extract_changelog_sections_since_version(
             lines.push(line.to_string());
         }
     }
-    
+
     // Don't forget the last entry
     if let Some((version_opt, header, lines)) = current_entry {
         let body = lines.join("\n");
@@ -774,12 +1176,13 @@ fn extract_changelog_sections_since_version(
                     body: body.clone(),
                 });
             }
-            
+
             if use_version_filtering {
-                if let (Some(ref current), Some(ref latest), Some(ref version)) = 
-                    (&current_semver, &latest_semver, &version_opt) 
+                if let (Some(ref current), Some(ref latest), Some(ref version)) =
+                    (&current_semver, &latest_semver, &version_opt)
                 {
-                    if version > current && version <= latest && entries.len() < MAX_CHANGELOG_VERSIONS {
+                    // Include current version too: current <= version <= latest
+                    if version >= current && version <= latest && entries.len() < MAX_CHANGELOG_VERSIONS {
                         entries.push(ChangelogEntry {
                             version: version.clone(),
                             version_string: header,
@@ -803,6 +1206,30 @@ fn extract_changelog_sections_since_version(
     final_entries
 }
 
+/// Format changelog entries to string
+fn format_changelog_entries(entries: Vec<ChangelogEntry>) -> String {
+    let mut output = Vec::new();
+
+    for entry in entries {
+        let header = if entry.version_string.starts_with('#') {
+            entry.version_string.clone()
+        } else {
+            format!("## {}", entry.version_string)
+        };
+
+        output.push(header);
+
+        let body = entry.body.trim();
+        if !body.is_empty() {
+            output.push(body.to_string());
+        }
+
+        output.push(String::new());
+    }
+
+    output.join("\n").trim().to_string()
+}
+
 /// Merge changelogs from GitHub releases and CHANGELOG.md file
 fn merge_changelogs(
     releases: Vec<ChangelogEntry>,
@@ -812,32 +1239,32 @@ fn merge_changelogs(
 ) -> String {
     // Build a map by version, preferring GitHub releases (usually more curated)
     let mut by_version: HashMap<String, ChangelogEntry> = HashMap::new();
-    
+
     // Add changelog file entries first (lower priority)
     for entry in changelog_file {
         by_version.insert(entry.version.to_string(), entry);
     }
-    
+
     // Add GitHub releases (higher priority, overwrites changelog file entries)
     for entry in releases {
         by_version.insert(entry.version.to_string(), entry);
     }
-    
+
     if by_version.is_empty() {
         return String::new();
     }
-    
+
     // Collect and sort entries
     let mut entries: Vec<ChangelogEntry> = by_version.into_values().collect();
     entries.sort_by(|a, b| b.version.cmp(&a.version));
-    
+
     // Truncate to max versions
     let total_count = entries.len();
     entries.truncate(MAX_CHANGELOG_VERSIONS);
-    
+
     // Format output
     let mut output = Vec::new();
-    
+
     for entry in &entries {
         // Add version header
         let header = if entry.version_string.starts_with('#') {
@@ -845,18 +1272,18 @@ fn merge_changelogs(
         } else {
             format!("## {}", entry.version_string)
         };
-        
+
         output.push(header);
-        
+
         // Add body (trimmed)
         let body = entry.body.trim();
         if !body.is_empty() {
             output.push(body.to_string());
         }
-        
+
         output.push(String::new()); // Blank line separator
     }
-    
+
     // Add truncation notice if needed
     if total_count > MAX_CHANGELOG_VERSIONS {
         output.push(format!(
@@ -866,9 +1293,9 @@ fn merge_changelogs(
             current_version
         ));
     }
-    
+
     let result = output.join("\n").trim().to_string();
-    
+
     // Final length limit to avoid massive tooltips
     // Zed has a nice scrolling view, so we can allow much more content
     if result.len() > 15000 {
@@ -878,32 +1305,81 @@ fn merge_changelogs(
     }
 }
 
-/// Compare versions and determine update severity
-pub fn check_version_status(current: &str, latest: &str, changelog: Option<String>, repository_url: Option<String>) -> VersionStatus {
-    let current_parsed = match Version::parse(current) {
+/// Build other tracks info for version status
+fn build_other_tracks(
+    current_track: &str,
+    current_version: &str,
+    all_tracks: &[TrackInfo],
+) -> Vec<TrackUpdate> {
+    let current_semver = Version::parse(current_version).ok();
+
+    all_tracks
+        .iter()
+        .filter(|t| t.name != current_track)
+        .map(|t| {
+            let track_semver = Version::parse(&t.version).ok();
+            let is_newer = match (&current_semver, &track_semver) {
+                (Some(cv), Some(tv)) => tv > cv,
+                _ => false,
+            };
+
+            TrackUpdate {
+                name: t.name.clone(),
+                version: t.version.clone(),
+                release_date: t.release_date,
+                is_newer,
+            }
+        })
+        .collect()
+}
+
+/// Check version status with track awareness
+pub fn check_version_status(
+    current_version: &str,
+    latest_on_track: &str,
+    current_track: &str,
+    all_tracks: &[TrackInfo],
+    changelog: Option<String>,
+    repository_url: Option<String>,
+) -> VersionStatus {
+    let current_parsed = match Version::parse(current_version) {
         Ok(v) => v,
-        Err(_) => return VersionStatus::Unknown {
-            changelog,
-            repository_url,
-        },
+        Err(_) => {
+            return VersionStatus::Unknown {
+                current_track: current_track.to_string(),
+                current_version: current_version.to_string(),
+                other_tracks: build_other_tracks(current_track, current_version, all_tracks),
+                changelog,
+                repository_url,
+            }
+        }
     };
 
-    let latest_parsed = match Version::parse(latest) {
+    let latest_parsed = match Version::parse(latest_on_track) {
         Ok(v) => v,
-        Err(_) => return VersionStatus::Unknown {
-            changelog,
-            repository_url,
-        },
+        Err(_) => {
+            return VersionStatus::Unknown {
+                current_track: current_track.to_string(),
+                current_version: current_version.to_string(),
+                other_tracks: build_other_tracks(current_track, current_version, all_tracks),
+                changelog,
+                repository_url,
+            }
+        }
     };
+
+    let other_tracks = build_other_tracks(current_track, current_version, all_tracks);
 
     if latest_parsed <= current_parsed {
         return VersionStatus::UpToDate {
+            current_track: current_track.to_string(),
+            current_version: current_version.to_string(),
+            other_tracks,
             changelog,
             repository_url,
         };
     }
 
-    // Determine severity
     let severity = if latest_parsed.major > current_parsed.major {
         UpdateSeverity::Major
     } else if latest_parsed.minor > current_parsed.minor {
@@ -913,7 +1389,10 @@ pub fn check_version_status(current: &str, latest: &str, changelog: Option<Strin
     };
 
     VersionStatus::UpdateAvailable {
-        latest: latest.to_string(),
+        current_track: current_track.to_string(),
+        current_version: current_version.to_string(),
+        latest_on_track: latest_on_track.to_string(),
+        other_tracks,
         severity,
         changelog,
         repository_url,
@@ -925,31 +1404,86 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_version_status() {
-        match check_version_status("1.0.0", "1.0.0", None, None) {
-            VersionStatus::UpToDate { .. } => {},
-            _ => panic!("Expected UpToDate"),
-        }
-        
-        match check_version_status("1.0.0", "1.0.1", None, None) {
-            VersionStatus::UpdateAvailable { severity, .. } => {
-                assert_eq!(severity, UpdateSeverity::Patch);
-            }
-            _ => panic!("Expected UpdateAvailable"),
-        }
-        
-        match check_version_status("1.0.0", "1.1.0", None, None) {
-            VersionStatus::UpdateAvailable { severity, .. } => {
-                assert_eq!(severity, UpdateSeverity::Minor);
-            }
-            _ => panic!("Expected UpdateAvailable"),
-        }
-        
-        match check_version_status("1.0.0", "2.0.0", None, None) {
-            VersionStatus::UpdateAvailable { severity, .. } => {
+    fn test_detect_track() {
+        let dist_tags = DistTags {
+            latest: Some("2.0.0".to_string()),
+            other_tags: [
+                ("next".to_string(), "2.1.0-beta.1".to_string()),
+                ("canary".to_string(), "2.2.0-canary.1".to_string()),
+            ]
+            .into_iter()
+            .collect(),
+        };
+
+        assert_eq!(detect_track("2.0.0", &dist_tags), "latest");
+        assert_eq!(detect_track("2.1.0-beta.1", &dist_tags), "next");
+        assert_eq!(detect_track("2.2.0-canary.1", &dist_tags), "canary");
+        assert_eq!(detect_track("1.5.0", &dist_tags), "latest"); // Default
+    }
+
+    #[test]
+    fn test_detect_track_expo_ui_scenario() {
+        // Test the @expo/ui scenario where the tag name doesn't match the prerelease identifier
+        // next: 55.0.0-beta.3, but user has 55.0.0-beta.1
+        let dist_tags = DistTags {
+            latest: Some("0.2.0-beta.9".to_string()),
+            other_tags: [
+                ("next".to_string(), "55.0.0-beta.3".to_string()),
+                ("canary".to_string(), "55.0.0-canary-20260128-67ce8d5".to_string()),
+            ]
+            .into_iter()
+            .collect(),
+        };
+
+        // User has an older beta version that matches the next track pattern
+        assert_eq!(detect_track("55.0.0-beta.1", &dist_tags), "next");
+        assert_eq!(detect_track("55.0.0-beta.2", &dist_tags), "next");
+        // Exact match
+        assert_eq!(detect_track("55.0.0-beta.3", &dist_tags), "next");
+        // Canary track
+        assert_eq!(detect_track("55.0.0-canary-20260128-67ce8d5", &dist_tags), "canary");
+        // Latest track
+        assert_eq!(detect_track("0.2.0-beta.9", &dist_tags), "latest");
+    }
+
+    #[test]
+    fn test_format_time_ago() {
+        let now = Utc::now();
+
+        assert_eq!(format_time_ago(now - chrono::Duration::hours(2)), "2 hours ago");
+        assert_eq!(format_time_ago(now - chrono::Duration::days(1)), "1 day ago");
+        assert_eq!(format_time_ago(now - chrono::Duration::days(5)), "5 days ago");
+    }
+
+    #[test]
+    fn test_check_version_status() {
+        let tracks = vec![
+            TrackInfo {
+                name: "latest".to_string(),
+                version: "2.0.0".to_string(),
+                release_date: None,
+            },
+            TrackInfo {
+                name: "next".to_string(),
+                version: "2.1.0-beta.1".to_string(),
+                release_date: None,
+            },
+        ];
+
+        match check_version_status("1.0.0", "2.0.0", "latest", &tracks, None, None) {
+            VersionStatus::UpdateAvailable { severity, other_tracks, .. } => {
                 assert_eq!(severity, UpdateSeverity::Major);
+                assert_eq!(other_tracks.len(), 1);
+                assert_eq!(other_tracks[0].name, "next");
             }
             _ => panic!("Expected UpdateAvailable"),
+        }
+
+        match check_version_status("2.0.0", "2.0.0", "latest", &tracks, None, None) {
+            VersionStatus::UpToDate { other_tracks, .. } => {
+                assert_eq!(other_tracks.len(), 1);
+            }
+            _ => panic!("Expected UpToDate"),
         }
     }
 
@@ -979,142 +1513,16 @@ mod tests {
         );
     }
 
-    /// Integration test for full package info flow
-    /// Run with: cargo test test_full_package_info_flow -- --ignored --nocapture
-    #[tokio::test]
-    #[ignore]
-    async fn test_full_package_info_flow() {
-        let registry = NpmRegistry::new();
-        
-        println!("Testing zod with current_version 3.22.0...");
-        let info = registry.get_package_info("zod", "3.22.0").await;
-        
-        match info {
-            Some(pkg_info) => {
-                println!("Package info retrieved:");
-                println!("  Latest version: {}", pkg_info.latest_version);
-                println!("  Repository URL: {:?}", pkg_info.repository_url);
-                println!("  Changelog: {:?}", pkg_info.changelog.as_ref().map(|c| {
-                    let len = c.len();
-                    if len > 200 {
-                        format!("{}... ({} chars total)", &c[..200], len)
-                    } else {
-                        c.clone()
-                    }
-                }));
-            }
-            None => {
-                println!("Failed to get package info for zod!");
-            }
-        }
-    }
-
-    /// Integration test that fetches GitHub releases via atom feed (no rate limits!)
-    /// Run with: cargo test test_github_atom_feed -- --ignored --nocapture
-    #[tokio::test]
-    #[ignore]
-    async fn test_github_atom_feed() {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .user_agent("npm-package-json-checker-lsp")
-            .build()
-            .unwrap();
-        
-        let url = "https://github.com/colinhacks/zod/releases.atom";
-        println!("Fetching atom feed: {}", url);
-        
-        let response = client.get(url).send().await;
-        
-        match response {
-            Ok(r) => {
-                println!("Status: {}", r.status());
-                
-                if r.status().is_success() {
-                    let content = r.text().await.unwrap_or_default();
-                    println!("Feed length: {} chars", content.len());
-                    
-                    let mut count = 0;
-                    for cap in ATOM_ENTRY_REGEX.captures_iter(&content) {
-                        let title = cap.get(1).map(|m| m.as_str()).unwrap_or("");
-                        let html_content = cap.get(2).map(|m| m.as_str()).unwrap_or("");
-                        let body = html_to_text(html_content);
-                        
-                        println!("\nEntry {}:", count + 1);
-                        println!("  Title: {}", title);
-                        println!("  Body preview: {}...", &body.chars().take(200).collect::<String>());
-                        
-                        if let Some(version) = parse_version_from_tag(title) {
-                            println!("  Parsed version: {}", version);
-                        } else {
-                            println!("  Failed to parse version from title!");
-                        }
-                        
-                        count += 1;
-                        if count >= 3 {
-                            break;
-                        }
-                    }
-                    println!("\nTotal entries found: {}", count);
-                } else {
-                    let body = r.text().await.unwrap_or_default();
-                    println!("Error body: {}", body);
-                }
-            }
-            Err(e) => println!("Request failed: {}", e),
-        }
-    }
-    
     #[test]
     fn test_html_to_text() {
         let html = "&lt;p&gt;Hello &amp; goodbye&lt;/p&gt;";
         let text = html_to_text(html);
         assert!(text.contains("Hello & goodbye"));
-        
+
         let html_list = "<ul><li>Item 1</li><li>Item 2</li></ul>";
         let text = html_to_text(html_list);
         assert!(text.contains("- Item 1"));
         assert!(text.contains("- Item 2"));
-    }
-
-    #[test]
-    fn test_version_comparison_zod() {
-        // Test that zod's version range works correctly
-        let current = Version::parse("3.22.0").unwrap();
-        let latest = Version::parse("4.3.5").unwrap();
-        let release_version = Version::parse("4.3.5").unwrap();
-        
-        // The filter is: current < version <= latest
-        // 4.3.5 should be included because 3.22.0 < 4.3.5 <= 4.3.5
-        assert!(release_version > current);
-        assert!(release_version <= latest);
-        
-        // Test that version 3.22.0 would NOT be included
-        let same_as_current = Version::parse("3.22.0").unwrap();
-        assert!(!(same_as_current > current)); // 3.22.0 > 3.22.0 is false
-    }
-
-    #[test]
-    fn test_parse_version_from_header() {
-        assert_eq!(
-            parse_version_from_header("## 19.2.1 (Dec 3, 2025)"),
-            Some(Version::parse("19.2.1").unwrap())
-        );
-        assert_eq!(
-            parse_version_from_header("## [4.18.2] - 2024-01-15"),
-            Some(Version::parse("4.18.2").unwrap())
-        );
-        assert_eq!(
-            parse_version_from_header("## v1.0.0"),
-            Some(Version::parse("1.0.0").unwrap())
-        );
-        assert_eq!(
-            parse_version_from_header("# 1.0.0"),
-            Some(Version::parse("1.0.0").unwrap())
-        );
-        assert_eq!(
-            parse_version_from_header("## [1.2.3-beta.1]"),
-            Some(Version::parse("1.2.3-beta.1").unwrap())
-        );
     }
 
     #[test]
@@ -1174,6 +1582,30 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_version_from_header() {
+        assert_eq!(
+            parse_version_from_header("## 19.2.1 (Dec 3, 2025)"),
+            Some(Version::parse("19.2.1").unwrap())
+        );
+        assert_eq!(
+            parse_version_from_header("## [4.18.2] - 2024-01-15"),
+            Some(Version::parse("4.18.2").unwrap())
+        );
+        assert_eq!(
+            parse_version_from_header("## v1.0.0"),
+            Some(Version::parse("1.0.0").unwrap())
+        );
+        assert_eq!(
+            parse_version_from_header("# 1.0.0"),
+            Some(Version::parse("1.0.0").unwrap())
+        );
+        assert_eq!(
+            parse_version_from_header("## [1.2.3-beta.1]"),
+            Some(Version::parse("1.2.3-beta.1").unwrap())
+        );
+    }
+
+    #[test]
     fn test_extract_changelog_sections_since_version() {
         let content = r#"# Changelog
 
@@ -1204,7 +1636,7 @@ misc.
 "#;
 
         let entries = extract_changelog_sections_since_version(content, "19.1.0", "19.2.1");
-        
+
         assert_eq!(entries.len(), 4); // 19.2.1, 19.2.0, 19.1.2, 19.1.1 (not 19.1.0)
         assert_eq!(entries[0].version, Version::parse("19.2.1").unwrap());
         assert_eq!(entries[1].version, Version::parse("19.2.0").unwrap());
@@ -1241,7 +1673,7 @@ Major release
 "#;
 
         let entries = extract_changelog_sections_since_version(content, "1.0.0", "10.0.0");
-        
+
         // All 8 versions should be included (10, 9, 8, 7, 6, 5, 4, 3) since MAX is now 15
         assert_eq!(entries.len(), 8);
         assert_eq!(entries[0].version, Version::parse("10.0.0").unwrap());

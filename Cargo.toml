@@ -1,9 +1,9 @@
 [package]
 name = "npm-package-json-checker"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 license = "MIT"
-description = "📥 Highlights outdated npm packages and shows changelogs in package.json files. Auto-fetches changelogs from GitHub releases and/or CHANGELOG.md. Shown minimalistically without UI bloat."
+description = "📥 Highlights outdated npm packages and shows changelogs in package.json files. Changelogs from GitHub releases and/or CHANGELOG.md. Shown minimalistically without UI bloat."
 
 [lib]
 crate-type = ["cdylib"]

@@ -12,13 +12,13 @@
 <img src="./images/screenshot.png"/>
 
 ### Features
-- 📥 Highlights outdated packages in package.json files
+- 📥 Highlights outdated packages in package.json
 - 🔍 Changelog between current version and latest version 
     - Parses and combines GitHub releases and/or CHANGELOG.md
     - Shows changes from current to latest if possible
     - Goes direct without API calls with rate limits    
 - 🔧 Offers auto-complete to update the package
-- 📚 Distinguishes between major, minor, and patch updates
+- 📚 Distinguishes between release tracks and major/minor/patch updates
 
 ### Loading Indicator
 <img src="./images/inlay.png" width="300"/>

@@ -2,10 +2,6 @@
 target/
 *.wasm
 
-# Binary (included for distribution but regenerated from source)
-npm-updates-lsp
-npm-updates-lsp.exe
-
 # IDE
 .idea/
 .vscode/
