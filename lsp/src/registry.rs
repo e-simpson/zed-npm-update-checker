@@ -1370,7 +1370,11 @@ pub fn check_version_status(
 
     let other_tracks = build_other_tracks(current_track, current_version, all_tracks);
 
-    if latest_parsed <= current_parsed {
+    // Check if there's a newer version on any track (including current track)
+    let current_track_has_update = latest_parsed > current_parsed;
+    let newer_on_other_track = other_tracks.iter().any(|t| t.is_newer);
+
+    if !current_track_has_update && !newer_on_other_track {
         return VersionStatus::UpToDate {
             current_track: current_track.to_string(),
             current_version: current_version.to_string(),
@@ -1380,9 +1384,48 @@ pub fn check_version_status(
         };
     }
 
-    let severity = if latest_parsed.major > current_parsed.major {
+    // Determine which version is the "latest" we should highlight
+    // Priority: current track update > newest on other tracks
+    let (effective_latest, effective_track) = if current_track_has_update {
+        (latest_on_track.to_string(), current_track.to_string())
+    } else {
+        // Find the newest version among other tracks
+        let newest = other_tracks
+            .iter()
+            .filter(|t| t.is_newer)
+            .max_by(|a, b| {
+                let a_ver = Version::parse(&a.version).ok();
+                let b_ver = Version::parse(&b.version).ok();
+                match (a_ver, b_ver) {
+                    (Some(av), Some(bv)) => av.cmp(&bv),
+                    _ => std::cmp::Ordering::Equal,
+                }
+            });
+
+        if let Some(newest) = newest {
+            (newest.version.clone(), newest.name.clone())
+        } else {
+            // Fallback (shouldn't happen since we checked is_newer above)
+            (latest_on_track.to_string(), current_track.to_string())
+        }
+    };
+
+    let effective_latest_parsed = match Version::parse(&effective_latest) {
+        Ok(v) => v,
+        Err(_) => {
+            return VersionStatus::Unknown {
+                current_track: current_track.to_string(),
+                current_version: current_version.to_string(),
+                other_tracks,
+                changelog,
+                repository_url,
+            }
+        }
+    };
+
+    let severity = if effective_latest_parsed.major > current_parsed.major {
         UpdateSeverity::Major
-    } else if latest_parsed.minor > current_parsed.minor {
+    } else if effective_latest_parsed.minor > current_parsed.minor {
         UpdateSeverity::Minor
     } else {
         UpdateSeverity::Patch
@@ -1391,7 +1434,7 @@ pub fn check_version_status(
     VersionStatus::UpdateAvailable {
         current_track: current_track.to_string(),
         current_version: current_version.to_string(),
-        latest_on_track: latest_on_track.to_string(),
+        latest_on_track: effective_latest,
         other_tracks,
         severity,
         changelog,
