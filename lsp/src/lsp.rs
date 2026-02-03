@@ -53,6 +53,7 @@ impl Backend {
     }
 
     /// Process a document - first show loading, then fetch versions incrementally
+    /// Uses dependency-level diffing to preserve check states for unchanged packages
     async fn process_document(&self, uri: &Url, text: &str) {
         if !Self::is_package_json(uri) {
             return;
@@ -60,10 +61,10 @@ impl Backend {
 
         debug!("Processing {}", uri);
 
-        // Parse dependencies
-        let dependencies = parse_package_json(text);
+        // Parse new dependencies
+        let new_dependencies = parse_package_json(text);
 
-        if dependencies.is_empty() {
+        if new_dependencies.is_empty() {
             let mut docs = self.documents.write().await;
             docs.insert(uri.clone(), DocumentState {
                 dependencies: vec![],
@@ -72,28 +73,64 @@ impl Backend {
             return;
         }
 
-        // Set all packages to "Checking" state immediately
+        // Get existing state to determine what needs re-checking
+        let existing_deps: HashMap<String, (String, CheckState)> = {
+            let docs = self.documents.read().await;
+            docs.get(uri)
+                .map(|state| {
+                    state.dependencies.iter()
+                        .filter_map(|d| {
+                            state.check_states.get(&d.name)
+                                .map(|cs| (d.name.clone(), (d.version.clone(), cs.clone())))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+
+        // Determine which packages need checking vs. can be preserved
         let mut check_states = HashMap::new();
-        for dep in &dependencies {
-            check_states.insert(dep.name.clone(), CheckState::Checking);
+        let mut needs_fetch = Vec::new();
+
+        for dep in &new_dependencies {
+            if let Some((old_version, old_state)) = existing_deps.get(&dep.name) {
+                if old_version == &dep.version {
+                    // Version unchanged - preserve existing check state
+                    debug!("Preserving cached state for {} @ {}", dep.name, dep.version);
+                    check_states.insert(dep.name.clone(), old_state.clone());
+                } else {
+                    // Version changed - needs re-checking
+                    debug!("Version changed for {}: {} -> {}", dep.name, old_version, dep.version);
+                    check_states.insert(dep.name.clone(), CheckState::Checking);
+                    needs_fetch.push(dep.clone());
+                }
+            } else {
+                // New dependency - needs checking
+                debug!("New dependency: {} @ {}", dep.name, dep.version);
+                check_states.insert(dep.name.clone(), CheckState::Checking);
+                needs_fetch.push(dep.clone());
+            }
         }
 
-        // Store initial state with loading indicators
+        // Store state (preserved + loading indicators for new/changed)
         {
             let mut docs = self.documents.write().await;
             docs.insert(uri.clone(), DocumentState {
-                dependencies: dependencies.clone(),
+                dependencies: new_dependencies.clone(),
                 check_states,
             });
         }
 
-        // Trigger refresh to show loading state
-        let _ = self.client.send_request::<lsp_types::request::InlayHintRefreshRequest>(()).await;
+        // Only trigger refresh if there are packages to fetch
+        if !needs_fetch.is_empty() {
+            // Trigger refresh to show loading state for new/changed packages
+            let _ = self.client.send_request::<lsp_types::request::InlayHintRefreshRequest>(()).await;
+        }
 
-        // Fetch version info AND changelogs together in parallel
+        // Fetch version info AND changelogs together in parallel, but only for changed/new deps
         let mut handles = Vec::new();
 
-        for dep in &dependencies {
+        for dep in &needs_fetch {
             let registry = self.registry.clone();
             let dep_name = dep.name.clone();
             let dep_clean_version = dep.clean_version.clone();
@@ -208,9 +245,11 @@ impl Backend {
             }
         }
 
-        // Publish diagnostics and refresh UI once everything is ready
-        let _ = self.client.send_request::<lsp_types::request::InlayHintRefreshRequest>(()).await;
-        self.publish_diagnostics(&uri).await;
+        // Publish diagnostics and refresh UI once everything is ready (only if we fetched something)
+        if !needs_fetch.is_empty() {
+            let _ = self.client.send_request::<lsp_types::request::InlayHintRefreshRequest>(()).await;
+            self.publish_diagnostics(&uri).await;
+        }
     }
 
     /// Publish diagnostics for outdated packages
