@@ -46,18 +46,9 @@ For an inlay loading indicator, enable inlay hints in Zed:
    ```
 3. In Zed: Command Palette → "zed: install dev extension" → select this directory
 
-### Project Structure
-
-```
-├── extension.toml       # Zed extension manifest
-├── src/lib.rs           # WASM extension (registers LSP)
-└── lsp/                 # LSP binary
-    └── src/
-        ├── main.rs      # Entry point
-        ├── lsp.rs       # tower-lsp server
-        ├── parser.rs    # package.json parsing
-        └── registry.rs  # npm registry + GitHub client
-```
+### Misc
+- Caches packages and attempts to not re-pull them if it doesn't need to
+- Doesn't warn/underline nightly builds
 
 ### Defaults
 
