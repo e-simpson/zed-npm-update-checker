@@ -48,7 +48,6 @@ For an inlay loading indicator, enable inlay hints in Zed:
 
 ### Misc
 - Caches packages and attempts to not re-pull them if it doesn't need to
-- Doesn't warn/underline nightly builds
 
 ### Defaults
 
