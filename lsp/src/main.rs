@@ -17,7 +17,10 @@ async fn main() {
     let args: Vec<String> = std::env::args().collect();
     for arg in args.iter().map(|s| s.to_lowercase()) {
         if arg == "-v" || arg == "--version" {
-            eprintln!("npm-package-json-checker-lsp v{}", env!("CARGO_PKG_VERSION"));
+            eprintln!(
+                "npm-package-json-checker-lsp v{}",
+                env!("CARGO_PKG_VERSION")
+            );
             return;
         } else if arg == "-h" || arg == "--help" {
             eprintln!("npm-package-json-checker-lsp - Language server for npm package updates");
@@ -31,10 +34,12 @@ async fn main() {
         }
     }
 
-    tracing::info!("Starting npm-package-json-checker-lsp v{}", env!("CARGO_PKG_VERSION"));
-    
+    tracing::info!(
+        "Starting npm-package-json-checker-lsp v{}",
+        env!("CARGO_PKG_VERSION")
+    );
+
     lsp::start().await;
-    
+
     tracing::info!("LSP server finished");
 }
-

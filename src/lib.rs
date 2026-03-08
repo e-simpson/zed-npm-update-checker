@@ -46,7 +46,7 @@ impl NpmUpdatesExtension {
         worktree: &zed::Worktree,
     ) -> Result<String> {
         let bin_name = bin_name();
-        
+
         // Check if the binary is already installed in PATH
         if let Some(path) = worktree.which(bin_name) {
             return Ok(path);
@@ -129,7 +129,7 @@ impl NpmUpdatesExtension {
                 .iter()
                 .find(|asset| asset.name == asset_name)
                 .ok_or_else(|| format!("no asset found matching {:?}", asset_name))?;
-            
+
             zed::download_file(&asset.download_url, &version_dir, file_type)
                 .map_err(|e| format!("failed to download file: {e}"))?;
 

@@ -18,7 +18,7 @@
     - Shows changes from current to latest if possible
     - Goes direct without API calls with rate limits    
 - 🔧 Offers auto-complete to update the package
-- 📚 Distinguishes between release tracks and major/minor/patch updates
+- 📚 Distinguishes between release tracks (major/minor/patch/canary/nightly/beta/alpha/experimental)
 
 ### Loading Indicator
 <img src="./images/inlay.png" width="300"/>

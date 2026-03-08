@@ -8,8 +8,8 @@ use tracing::{debug, info};
 
 use crate::parser::{parse_package_json, Dependency};
 use crate::registry::{
-    check_version_status, format_date_with_ago, NpmRegistry, TrackUpdate,
-    UpdateSeverity, VersionStatus
+    check_version_status, format_date_with_ago, prerelease_track_label, NpmRegistry, TrackUpdate,
+    VersionStatus,
 };
 
 const LSP_NAME: &str = "npm-package-json-checker-lsp";
@@ -66,10 +66,13 @@ impl Backend {
 
         if new_dependencies.is_empty() {
             let mut docs = self.documents.write().await;
-            docs.insert(uri.clone(), DocumentState {
-                dependencies: vec![],
-                check_states: HashMap::new(),
-            });
+            docs.insert(
+                uri.clone(),
+                DocumentState {
+                    dependencies: vec![],
+                    check_states: HashMap::new(),
+                },
+            );
             return;
         }
 
@@ -78,9 +81,13 @@ impl Backend {
             let docs = self.documents.read().await;
             docs.get(uri)
                 .map(|state| {
-                    state.dependencies.iter()
+                    state
+                        .dependencies
+                        .iter()
                         .filter_map(|d| {
-                            state.check_states.get(&d.name)
+                            state
+                                .check_states
+                                .get(&d.name)
                                 .map(|cs| (d.name.clone(), (d.version.clone(), cs.clone())))
                         })
                         .collect()
@@ -100,7 +107,10 @@ impl Backend {
                     check_states.insert(dep.name.clone(), old_state.clone());
                 } else {
                     // Version changed - needs re-checking
-                    debug!("Version changed for {}: {} -> {}", dep.name, old_version, dep.version);
+                    debug!(
+                        "Version changed for {}: {} -> {}",
+                        dep.name, old_version, dep.version
+                    );
                     check_states.insert(dep.name.clone(), CheckState::Checking);
                     needs_fetch.push(dep.clone());
                 }
@@ -115,16 +125,22 @@ impl Backend {
         // Store state (preserved + loading indicators for new/changed)
         {
             let mut docs = self.documents.write().await;
-            docs.insert(uri.clone(), DocumentState {
-                dependencies: new_dependencies.clone(),
-                check_states,
-            });
+            docs.insert(
+                uri.clone(),
+                DocumentState {
+                    dependencies: new_dependencies.clone(),
+                    check_states,
+                },
+            );
         }
 
         // Only trigger refresh if there are packages to fetch
         if !needs_fetch.is_empty() {
             // Trigger refresh to show loading state for new/changed packages
-            let _ = self.client.send_request::<lsp_types::request::InlayHintRefreshRequest>(()).await;
+            let _ = self
+                .client
+                .send_request::<lsp_types::request::InlayHintRefreshRequest>(())
+                .await;
         }
 
         // Fetch version info AND changelogs together in parallel, but only for changed/new deps
@@ -137,7 +153,9 @@ impl Backend {
 
             let handle = tokio::spawn(async move {
                 // Step 1: Get version info from npm registry (includes all tracks)
-                let version_info = registry.get_package_version_info(&dep_name, &dep_clean_version).await;
+                let version_info = registry
+                    .get_package_version_info(&dep_name, &dep_clean_version)
+                    .await;
 
                 // Step 2: Check version status and fetch changelog if repo URL exists
                 let final_status = if let Some(ref pkg_info) = version_info {
@@ -154,17 +172,21 @@ impl Backend {
                         // Fetch changelog if there's a repo URL
                         let changelog = if let Some(ref repo_url) = pkg_info.repository_url {
                             let latest_for_changelog = match &temp_status {
-                                VersionStatus::UpdateAvailable { latest_on_track, .. } => latest_on_track.clone(),
+                                VersionStatus::UpdateAvailable {
+                                    latest_on_track, ..
+                                } => latest_on_track.clone(),
                                 _ => dep_clean_version.clone(),
                             };
 
-                            registry.fetch_changelog_for_package(
-                                &dep_name,
-                                &dep_clean_version,
-                                &latest_for_changelog,
-                                repo_url,
-                                pkg_info.repository_directory.as_deref(),
-                            ).await
+                            registry
+                                .fetch_changelog_for_package(
+                                    &dep_name,
+                                    &dep_clean_version,
+                                    &latest_for_changelog,
+                                    repo_url,
+                                    pkg_info.repository_directory.as_deref(),
+                                )
+                                .await
                         } else {
                             None
                         };
@@ -179,35 +201,39 @@ impl Backend {
                                 severity,
                                 repository_url,
                                 ..
-                            } => {
-                                VersionStatus::UpdateAvailable {
-                                    current_track,
-                                    current_version,
-                                    latest_on_track,
-                                    other_tracks,
-                                    severity,
-                                    changelog,
-                                    repository_url,
-                                }
-                            }
-                            VersionStatus::UpToDate { current_track, current_version, other_tracks, .. } => {
-                                VersionStatus::UpToDate {
-                                    current_track,
-                                    current_version,
-                                    other_tracks,
-                                    changelog,
-                                    repository_url: pkg_info.repository_url.clone(),
-                                }
-                            }
-                            VersionStatus::Unknown { current_track, current_version, other_tracks, .. } => {
-                                VersionStatus::Unknown {
-                                    current_track,
-                                    current_version,
-                                    other_tracks,
-                                    changelog,
-                                    repository_url: pkg_info.repository_url.clone(),
-                                }
-                            }
+                            } => VersionStatus::UpdateAvailable {
+                                current_track,
+                                current_version,
+                                latest_on_track,
+                                other_tracks,
+                                severity,
+                                changelog,
+                                repository_url,
+                            },
+                            VersionStatus::UpToDate {
+                                current_track,
+                                current_version,
+                                other_tracks,
+                                ..
+                            } => VersionStatus::UpToDate {
+                                current_track,
+                                current_version,
+                                other_tracks,
+                                changelog,
+                                repository_url: pkg_info.repository_url.clone(),
+                            },
+                            VersionStatus::Unknown {
+                                current_track,
+                                current_version,
+                                other_tracks,
+                                ..
+                            } => VersionStatus::Unknown {
+                                current_track,
+                                current_version,
+                                other_tracks,
+                                changelog,
+                                repository_url: pkg_info.repository_url.clone(),
+                            },
                             other => other,
                         }
                     } else {
@@ -240,14 +266,19 @@ impl Backend {
             if let Ok((dep_name, status)) = handle.await {
                 let mut docs = self.documents.write().await;
                 if let Some(state) = docs.get_mut(&uri) {
-                    state.check_states.insert(dep_name, CheckState::Done(status));
+                    state
+                        .check_states
+                        .insert(dep_name, CheckState::Done(status));
                 }
             }
         }
 
         // Publish diagnostics and refresh UI once everything is ready (only if we fetched something)
         if !needs_fetch.is_empty() {
-            let _ = self.client.send_request::<lsp_types::request::InlayHintRefreshRequest>(()).await;
+            let _ = self
+                .client
+                .send_request::<lsp_types::request::InlayHintRefreshRequest>(())
+                .await;
             self.publish_diagnostics(&uri).await;
         }
     }
@@ -267,23 +298,37 @@ impl Backend {
                     latest_on_track,
                     severity,
                     current_track,
+                    current_version,
                     other_tracks,
                     ..
-                } = status {
-                    // Build message with track info in new format: "track PATCH/MINOR/MAJOR: New version code (X time ago)"
-                    let time_ago = other_tracks.iter()
+                } = status
+                {
+                    let current_pre_label = prerelease_track_label(current_version);
+                    let latest_pre_label = prerelease_track_label(latest_on_track);
+
+                    // For prerelease channels, only surface updates that stay on the same channel.
+                    if current_pre_label.is_some() && current_pre_label != latest_pre_label {
+                        continue;
+                    }
+
+                    let time_ago = other_tracks
+                        .iter()
                         .find(|t| t.name == *current_track)
                         .and_then(|t| t.release_date)
                         .map(|date| format!(" ({})", format_date_with_ago(date)))
                         .unwrap_or_default();
 
-                    let message = format!(
-                        "{} {} available: {}{}",
-                        current_track,
-                        severity.label(),
-                        latest_on_track,
-                        time_ago
-                    );
+                    let update_label = current_pre_label
+                        .filter(|label| Some(*label) == latest_pre_label)
+                        .unwrap_or_else(|| severity.label());
+
+                    let message = format!("{} → {}{}", update_label, latest_on_track, time_ago);
+
+                    let diagnostic_severity = if current_pre_label.is_some() {
+                        DiagnosticSeverity::HINT
+                    } else {
+                        DiagnosticSeverity::INFORMATION
+                    };
 
                     diagnostics.push(Diagnostic {
                         range: Range {
@@ -296,7 +341,7 @@ impl Backend {
                                 character: dep.version_end_col,
                             },
                         },
-                        severity: Some(DiagnosticSeverity::INFORMATION),
+                        severity: Some(diagnostic_severity),
                         code: Some(NumberOrString::String("outdated-dependency".to_string())),
                         source: Some(LSP_NAME.to_string()),
                         message,
@@ -307,7 +352,7 @@ impl Backend {
                             "package": dep.name,
                             "current": dep.version,
                             "latest": latest_on_track,
-                            "severity": severity.label(),
+                            "severity": update_label,
                             "track": current_track,
                         })),
                     });
@@ -357,10 +402,7 @@ impl Backend {
     }
 
     /// Generate code actions for a range
-    async fn generate_code_actions(&self,
-        uri: &Url,
-        range: Range
-    ) -> Vec<CodeActionOrCommand> {
+    async fn generate_code_actions(&self, uri: &Url, range: Range) -> Vec<CodeActionOrCommand> {
         let docs = self.documents.read().await;
         let Some(state) = docs.get(uri) else {
             return vec![];
@@ -394,8 +436,14 @@ impl Backend {
                             uri,
                             dep,
                             latest_on_track,
-                            &format!("{}: Update {} to {} ({})",
-                                severity.label(), dep.name, latest_on_track, track_label),
+                            &format!(
+                                "{}: Update {} to {} ({})",
+                                prerelease_track_label(latest_on_track)
+                                    .unwrap_or_else(|| severity.label()),
+                                dep.name,
+                                latest_on_track,
+                                track_label
+                            ),
                             true, // is_preferred
                         );
                         actions.push(CodeActionOrCommand::CodeAction(update_action));
@@ -406,7 +454,9 @@ impl Backend {
 
                         // Put stable track first if not on it
                         if current_track != "latest" {
-                            if let Some(latest_idx) = sorted_tracks.iter().position(|t| t.name == "latest") {
+                            if let Some(latest_idx) =
+                                sorted_tracks.iter().position(|t| t.name == "latest")
+                            {
                                 let latest_track = sorted_tracks.remove(latest_idx);
                                 sorted_tracks.insert(0, latest_track);
                             }
@@ -423,20 +473,25 @@ impl Backend {
                                 uri,
                                 dep,
                                 &track.version,
-                                &format!("Switch to {}: {}{}",
-                                    track.name, track.version, date_str),
+                                &format!("Switch to {}: {}{}", track.name, track.version, date_str),
                                 false, // not preferred
                             );
                             actions.push(CodeActionOrCommand::CodeAction(switch_action));
                         }
                     }
-                    VersionStatus::UpToDate { current_track, other_tracks, .. } => {
+                    VersionStatus::UpToDate {
+                        current_track,
+                        other_tracks,
+                        ..
+                    } => {
                         // Still show options to switch tracks even if up to date
                         let mut sorted_tracks: Vec<&TrackUpdate> = other_tracks.iter().collect();
 
                         // Put stable track first if not on it
                         if current_track != "latest" {
-                            if let Some(latest_idx) = sorted_tracks.iter().position(|t| t.name == "latest") {
+                            if let Some(latest_idx) =
+                                sorted_tracks.iter().position(|t| t.name == "latest")
+                            {
                                 let latest_track = sorted_tracks.remove(latest_idx);
                                 sorted_tracks.insert(0, latest_track);
                             }
@@ -453,8 +508,7 @@ impl Backend {
                                 uri,
                                 dep,
                                 &track.version,
-                                &format!("Switch to {}: {}{}",
-                                    track.name, track.version, date_str),
+                                &format!("Switch to {}: {}{}", track.name, track.version, date_str),
                                 false,
                             );
                             actions.push(CodeActionOrCommand::CodeAction(switch_action));
@@ -466,22 +520,28 @@ impl Backend {
         }
 
         // Add "Update all" action if there are multiple outdated deps on the current page
-        let outdated_deps: Vec<_> = state.dependencies.iter().filter(|d| {
-            if d.line < range.start.line || d.line > range.end.line {
-                return false;
-            }
-            matches!(
-                state.check_states.get(&d.name),
-                Some(CheckState::Done(VersionStatus::UpdateAvailable { .. }))
-            )
-        }).collect();
+        let outdated_deps: Vec<_> = state
+            .dependencies
+            .iter()
+            .filter(|d| {
+                if d.line < range.start.line || d.line > range.end.line {
+                    return false;
+                }
+                matches!(
+                    state.check_states.get(&d.name),
+                    Some(CheckState::Done(VersionStatus::UpdateAvailable { .. }))
+                )
+            })
+            .collect();
 
         if outdated_deps.len() > 1 {
             let mut all_edits = Vec::new();
 
             for dep in &outdated_deps {
-                if let Some(CheckState::Done(VersionStatus::UpdateAvailable { latest_on_track, .. })) =
-                    state.check_states.get(&dep.name)
+                if let Some(CheckState::Done(VersionStatus::UpdateAvailable {
+                    latest_on_track,
+                    ..
+                })) = state.check_states.get(&dep.name)
                 {
                     all_edits.push(TextEdit {
                         range: Range {
@@ -602,7 +662,10 @@ fn extract_github_owner_repo(url: &str) -> Option<(String, String)> {
         .trim_end_matches('/');
 
     // Handle github.com/owner/repo format
-    if let Some(rest) = url.strip_prefix("github.com/").or_else(|| url.strip_prefix("github.com:")) {
+    if let Some(rest) = url
+        .strip_prefix("github.com/")
+        .or_else(|| url.strip_prefix("github.com:"))
+    {
         let parts: Vec<&str> = rest.split('/').collect();
         if parts.len() >= 2 {
             return Some((parts[0].to_string(), parts[1].to_string()));
@@ -660,20 +723,23 @@ impl LanguageServer for Backend {
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         debug!("did_open: {}", params.text_document.uri);
-        self.process_document(&params.text_document.uri, &params.text_document.text).await;
+        self.process_document(&params.text_document.uri, &params.text_document.text)
+            .await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         debug!("did_change: {}", params.text_document.uri);
         if let Some(change) = params.content_changes.into_iter().next() {
-            self.process_document(&params.text_document.uri, &change.text).await;
+            self.process_document(&params.text_document.uri, &change.text)
+                .await;
         }
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         debug!("did_save: {}", params.text_document.uri);
         if let Some(text) = params.text {
-            self.process_document(&params.text_document.uri, &text).await;
+            self.process_document(&params.text_document.uri, &text)
+                .await;
         }
     }
 
@@ -683,9 +749,7 @@ impl LanguageServer for Backend {
         docs.remove(&params.text_document.uri);
     }
 
-    async fn inlay_hint(&self,
-        params: InlayHintParams
-    ) -> Result<Option<Vec<InlayHint>>> {
+    async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
         debug!("inlay_hint request for: {}", params.text_document.uri);
         let hints = self.generate_inlay_hints(&params.text_document.uri).await;
         debug!("inlay_hint returning {} hints", hints.len());
@@ -695,9 +759,7 @@ impl LanguageServer for Backend {
         Ok(Some(hints))
     }
 
-    async fn code_action(&self,
-        params: CodeActionParams
-    ) -> Result<Option<CodeActionResponse>> {
+    async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
         debug!("code_action: {}", params.text_document.uri);
         let actions = self
             .generate_code_actions(&params.text_document.uri, params.range)
@@ -705,9 +767,7 @@ impl LanguageServer for Backend {
         Ok(Some(actions))
     }
 
-    async fn hover(&self,
-        params: HoverParams
-    ) -> Result<Option<Hover>> {
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
         let uri = &params.text_document_position_params.text_document.uri;
         let position = params.text_document_position_params.position;
 
@@ -719,15 +779,22 @@ impl LanguageServer for Backend {
         // Find if we're hovering over a dependency line (package name or version)
         for dep in &state.dependencies {
             // Check if cursor is on the package name OR version string
-            let on_name = position.character >= dep.name_start_col &&
-                          position.character <= dep.name_end_col;
-            let on_version = position.character >= dep.version_start_col &&
-                             position.character <= dep.version_end_col;
+            let on_name =
+                position.character >= dep.name_start_col && position.character <= dep.name_end_col;
+            let on_version = position.character >= dep.version_start_col
+                && position.character <= dep.version_end_col;
 
             if dep.line == position.line && (on_name || on_version) {
                 if let Some(CheckState::Done(status)) = state.check_states.get(&dep.name) {
                     // Extract changelog and repository_url from any status variant
-                    let (current_track, current_version, other_tracks, changelog, repository_url, latest_on_track) = match status {
+                    let (
+                        current_track,
+                        current_version,
+                        other_tracks,
+                        changelog,
+                        repository_url,
+                        latest_on_track,
+                    ) = match status {
                         VersionStatus::UpdateAvailable {
                             current_track,
                             current_version,
@@ -736,30 +803,42 @@ impl LanguageServer for Backend {
                             repository_url,
                             latest_on_track,
                             ..
-                        } => {
-                            (current_track.clone(), current_version.clone(), other_tracks.clone(),
-                             changelog.clone(), repository_url.clone(), Some(latest_on_track.clone()))
-                        }
+                        } => (
+                            current_track.clone(),
+                            current_version.clone(),
+                            other_tracks.clone(),
+                            changelog.clone(),
+                            repository_url.clone(),
+                            Some(latest_on_track.clone()),
+                        ),
                         VersionStatus::UpToDate {
                             current_track,
                             current_version,
                             other_tracks,
                             changelog,
-                            repository_url
-                        } => {
-                            (current_track.clone(), current_version.clone(), other_tracks.clone(),
-                             changelog.clone(), repository_url.clone(), None)
-                        }
+                            repository_url,
+                        } => (
+                            current_track.clone(),
+                            current_version.clone(),
+                            other_tracks.clone(),
+                            changelog.clone(),
+                            repository_url.clone(),
+                            None,
+                        ),
                         VersionStatus::Unknown {
                             current_track,
                             current_version,
                             other_tracks,
                             changelog,
-                            repository_url
-                        } => {
-                            (current_track.clone(), current_version.clone(), other_tracks.clone(),
-                             changelog.clone(), repository_url.clone(), None)
-                        }
+                            repository_url,
+                        } => (
+                            current_track.clone(),
+                            current_version.clone(),
+                            other_tracks.clone(),
+                            changelog.clone(),
+                            repository_url.clone(),
+                            None,
+                        ),
                         _ => return Ok(None),
                     };
 
@@ -769,16 +848,20 @@ impl LanguageServer for Backend {
                     // Add repository link if available
                     if let Some(ref repo) = repository_url {
                         let clean_url = clean_repo_url(repo);
-                        let link_text = if let Some((owner, repo_name)) = extract_github_owner_repo(repo) {
-                            format!("View on GitHub: {}/{}", owner, repo_name)
-                        } else {
-                            "View on GitHub".to_string()
-                        };
+                        let link_text =
+                            if let Some((owner, repo_name)) = extract_github_owner_repo(repo) {
+                                format!("View on GitHub: {}/{}", owner, repo_name)
+                            } else {
+                                "View on GitHub".to_string()
+                            };
                         content_parts.push(format!("[{}]({})  ", link_text, clean_url));
                     }
 
                     // Add NPM link with spacing
-                    content_parts.push(format!("[View on NPM: {}](https://www.npmjs.com/package/{})\n", dep.name, dep.name));
+                    content_parts.push(format!(
+                        "[View on NPM: {}](https://www.npmjs.com/package/{})\n",
+                        dep.name, dep.name
+                    ));
 
                     // Divider between links and track info
                     content_parts.push("---".to_string());
@@ -790,7 +873,9 @@ impl LanguageServer for Backend {
                     let mut all_tracks: Vec<_> = other_tracks.iter().collect();
 
                     // Add current track info with the LATEST version for that track (not current version)
-                    let current_track_version = latest_on_track.clone().unwrap_or_else(|| current_version.clone());
+                    let current_track_version = latest_on_track
+                        .clone()
+                        .unwrap_or_else(|| current_version.clone());
                     let current_track_info = TrackUpdate {
                         name: current_track.clone(),
                         version: current_track_version,
@@ -800,13 +885,11 @@ impl LanguageServer for Backend {
                     all_tracks.push(&current_track_info);
 
                     // Sort by release date (most recent first)
-                    all_tracks.sort_by(|a, b| {
-                        match (b.release_date, a.release_date) {
-                            (Some(b_date), Some(a_date)) => b_date.cmp(&a_date),
-                            (Some(_), None) => std::cmp::Ordering::Less,
-                            (None, Some(_)) => std::cmp::Ordering::Greater,
-                            (None, None) => std::cmp::Ordering::Equal,
-                        }
+                    all_tracks.sort_by(|a, b| match (b.release_date, a.release_date) {
+                        (Some(b_date), Some(a_date)) => b_date.cmp(&a_date),
+                        (Some(_), None) => std::cmp::Ordering::Less,
+                        (None, Some(_)) => std::cmp::Ordering::Greater,
+                        (None, None) => std::cmp::Ordering::Equal,
                     });
 
                     // Format track lines
@@ -825,7 +908,10 @@ impl LanguageServer for Backend {
                             ""
                         };
 
-                        track_lines.push(format!("- **{}**: {}{}{}", track.name, track.version, date_str, current_marker));
+                        track_lines.push(format!(
+                            "- **{}**: {}{}{}",
+                            track.name, track.version, date_str, current_marker
+                        ));
                     }
 
                     if !track_lines.is_empty() {
@@ -849,8 +935,14 @@ impl LanguageServer for Backend {
                             value: content,
                         }),
                         range: Some(Range {
-                            start: Position { line: dep.line, character: dep.name_start_col },
-                            end: Position { line: dep.line, character: dep.version_end_col },
+                            start: Position {
+                                line: dep.line,
+                                character: dep.name_start_col,
+                            },
+                            end: Position {
+                                line: dep.line,
+                                character: dep.version_end_col,
+                            },
                         }),
                     }));
                 }

@@ -77,6 +77,65 @@ impl UpdateSeverity {
     }
 }
 
+/// Map prerelease channel names to display labels
+fn prerelease_channel_label(channel: &str) -> Option<&'static str> {
+    match channel {
+        "alpha" => Some("ALPHA"),
+        "beta" => Some("BETA"),
+        "canary" => Some("CANARY"),
+        "nightly" => Some("NIGHTLY"),
+        "rc" | "candidate" => Some("CANDIDATE"),
+        "experimental" | "exp" => Some("EXPERIMENTAL"),
+        _ => None,
+    }
+}
+
+/// Extract first prerelease channel token from a version string
+fn prerelease_channel(version: &str) -> Option<String> {
+    if let Ok(parsed) = Version::parse(version) {
+        let pre = parsed.pre.as_str();
+        if pre.is_empty() {
+            return None;
+        }
+
+        let token = pre
+            .split(['.', '-'])
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase();
+
+        if token.is_empty() {
+            None
+        } else {
+            Some(token)
+        }
+    } else if version.contains('-') {
+        let token = version
+            .split('-')
+            .nth(1)
+            .unwrap_or("")
+            .split(['.', '-'])
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase();
+
+        if token.is_empty() {
+            None
+        } else {
+            Some(token)
+        }
+    } else {
+        None
+    }
+}
+
+/// Return display label for prerelease channel, if known
+pub fn prerelease_track_label(version: &str) -> Option<&'static str> {
+    prerelease_channel(version)
+        .as_deref()
+        .and_then(prerelease_channel_label)
+}
+
 /// Information about a specific track
 #[derive(Debug, Clone)]
 pub struct TrackInfo {
@@ -277,7 +336,11 @@ impl NpmRegistry {
         };
 
         if !response.status().is_success() {
-            debug!("Non-success status for {}: {}", package_name, response.status());
+            debug!(
+                "Non-success status for {}: {}",
+                package_name,
+                response.status()
+            );
             return None;
         }
 
@@ -338,7 +401,9 @@ impl NpmRegistry {
         }
 
         // Fetch changelog from GitHub
-        let changelog = self.fetch_changelog(repo_url, repo_directory, current_version, latest_version).await;
+        let changelog = self
+            .fetch_changelog(repo_url, repo_directory, current_version, latest_version)
+            .await;
 
         // Update full cache with changelog
         let info = PackageInfo {
@@ -393,7 +458,11 @@ impl NpmRegistry {
         };
 
         if !response.status().is_success() {
-            warn!("Non-success status for {}: {}", package_name, response.status());
+            warn!(
+                "Non-success status for {}: {}",
+                package_name,
+                response.status()
+            );
             return None;
         }
 
@@ -416,7 +485,13 @@ impl NpmRegistry {
 
         // Try to fetch changelog from GitHub with version range
         let changelog = if let Some(ref url) = repo_url {
-            self.fetch_changelog(url, repo_directory.as_deref(), current_version, &latest_on_track).await
+            self.fetch_changelog(
+                url,
+                repo_directory.as_deref(),
+                current_version,
+                &latest_on_track,
+            )
+            .await
         } else {
             None
         };
@@ -455,7 +530,10 @@ impl NpmRegistry {
             }
         };
 
-        debug!("Fetching changelog for {}/{} (dir: {:?}): {} -> {}", owner, repo, directory, current_version, latest_version);
+        debug!(
+            "Fetching changelog for {}/{} (dir: {:?}): {} -> {}",
+            owner, repo, directory, current_version, latest_version
+        );
 
         // Try package-specific changelog first if in monorepo
         let monorepo_changelog = if let Some(dir) = directory {
@@ -471,22 +549,35 @@ impl NpmRegistry {
             self.fetch_changelog_file(&owner, &repo, current_version, latest_version)
         );
 
-        debug!("GitHub releases found: {}, CHANGELOG.md sections found: {}",
-               releases_result.len(), root_changelog_result.len());
+        debug!(
+            "GitHub releases found: {}, CHANGELOG.md sections found: {}",
+            releases_result.len(),
+            root_changelog_result.len()
+        );
 
         // Merge all sources
         let merged = if let Some(ref mono_cl) = monorepo_changelog {
             // Use monorepo changelog if available
             mono_cl.clone()
         } else {
-            merge_changelogs(releases_result, root_changelog_result, current_version, latest_version)
+            merge_changelogs(
+                releases_result,
+                root_changelog_result,
+                current_version,
+                latest_version,
+            )
         };
 
         if merged.is_empty() {
             debug!("No changelog content after merge for {}/{}", owner, repo);
             None
         } else {
-            debug!("Changelog content generated for {}/{}: {} chars", owner, repo, merged.len());
+            debug!(
+                "Changelog content generated for {}/{}: {} chars",
+                owner,
+                repo,
+                merged.len()
+            );
             Some(merged)
         }
     }
@@ -542,9 +633,15 @@ impl NpmRegistry {
 
         // Try GitHub releases with package-specific tags
         let package_name = directory.split('/').last().unwrap_or(directory);
-        let releases = self.fetch_github_releases_with_prefix(
-            owner, repo, current_version, latest_version, package_name
-        ).await;
+        let releases = self
+            .fetch_github_releases_with_prefix(
+                owner,
+                repo,
+                current_version,
+                latest_version,
+                package_name,
+            )
+            .await;
 
         if !releases.is_empty() {
             return Some(format_changelog_entries(releases));
@@ -601,7 +698,8 @@ impl NpmRegistry {
 
             if let Some(version) = parse_version_from_tag(title) {
                 if use_version_filtering {
-                    if let (Some(ref current), Some(ref latest)) = (&current_semver, &latest_semver) {
+                    if let (Some(ref current), Some(ref latest)) = (&current_semver, &latest_semver)
+                    {
                         if version > *current && version <= *latest {
                             entries.push(ChangelogEntry {
                                 version,
@@ -651,11 +749,19 @@ impl NpmRegistry {
         let response = match self.client.get(&url).send().await {
             Ok(r) if r.status().is_success() => r,
             Ok(r) => {
-                debug!("GitHub releases atom feed returned status {} for {}/{}", r.status(), owner, repo);
+                debug!(
+                    "GitHub releases atom feed returned status {} for {}/{}",
+                    r.status(),
+                    owner,
+                    repo
+                );
                 return vec![];
             }
             Err(e) => {
-                debug!("Failed to fetch GitHub releases atom feed for {}/{}: {}", owner, repo, e);
+                debug!(
+                    "Failed to fetch GitHub releases atom feed for {}/{}: {}",
+                    owner, repo, e
+                );
                 return vec![];
             }
         };
@@ -663,7 +769,10 @@ impl NpmRegistry {
         let content = match response.text().await {
             Ok(c) => c,
             Err(e) => {
-                debug!("Failed to read atom feed response for {}/{}: {}", owner, repo, e);
+                debug!(
+                    "Failed to read atom feed response for {}/{}: {}",
+                    owner, repo, e
+                );
                 return vec![];
             }
         };
@@ -689,7 +798,9 @@ impl NpmRegistry {
             // Store in fallback entries (recent releases regardless of version)
             if fallback_entries.len() < MAX_CHANGELOG_VERSIONS {
                 // Use a dummy version for fallback entries if we can't parse one
-                let version = parsed_version.clone().unwrap_or_else(|| Version::new(0, 0, 0));
+                let version = parsed_version
+                    .clone()
+                    .unwrap_or_else(|| Version::new(0, 0, 0));
                 fallback_entries.push(ChangelogEntry {
                     version,
                     version_string: title.to_string(),
@@ -724,15 +835,24 @@ impl NpmRegistry {
             entries.sort_by(|a, b| b.version.cmp(&a.version));
             entries
         } else if !fallback_entries.is_empty() {
-            debug!("Version filtering failed, using {} most recent releases for {}/{}",
-                   fallback_entries.len(), owner, repo);
+            debug!(
+                "Version filtering failed, using {} most recent releases for {}/{}",
+                fallback_entries.len(),
+                owner,
+                repo
+            );
             // Fallback entries are already in order (newest first from atom feed)
             fallback_entries
         } else {
             vec![]
         };
 
-        debug!("Parsed {} releases from atom feed for {}/{}", final_entries.len(), owner, repo);
+        debug!(
+            "Parsed {} releases from atom feed for {}/{}",
+            final_entries.len(),
+            owner,
+            repo
+        );
 
         final_entries
     }
@@ -775,7 +895,6 @@ impl NpmRegistry {
 
         vec![]
     }
-
 }
 
 impl Default for NpmRegistry {
@@ -914,9 +1033,17 @@ pub fn format_time_ago(date: DateTime<Utc>) -> String {
         let weeks = duration.num_days() / 7;
         format!("{} week{} ago", weeks, if weeks == 1 { "" } else { "s" })
     } else if duration.num_days() > 0 {
-        format!("{} day{} ago", duration.num_days(), if duration.num_days() == 1 { "" } else { "s" })
+        format!(
+            "{} day{} ago",
+            duration.num_days(),
+            if duration.num_days() == 1 { "" } else { "s" }
+        )
     } else if duration.num_hours() > 0 {
-        format!("{} hour{} ago", duration.num_hours(), if duration.num_hours() == 1 { "" } else { "s" })
+        format!(
+            "{} hour{} ago",
+            duration.num_hours(),
+            if duration.num_hours() == 1 { "" } else { "s" }
+        )
     } else if duration.num_minutes() > 0 {
         format!(
             "{} minute{} ago",
@@ -1009,9 +1136,7 @@ fn html_to_text(html: &str) -> String {
     }
 
     // Clean up excessive whitespace
-    let lines: Vec<&str> = result.lines()
-        .map(|l| l.trim())
-        .collect();
+    let lines: Vec<&str> = result.lines().map(|l| l.trim()).collect();
 
     lines.join("\n")
 }
@@ -1030,7 +1155,10 @@ fn parse_github_url(url: &str) -> Option<(String, String)> {
         .trim_end_matches('/');
 
     // Handle github.com/owner/repo format
-    if let Some(rest) = url.strip_prefix("github.com/").or_else(|| url.strip_prefix("github.com:")) {
+    if let Some(rest) = url
+        .strip_prefix("github.com/")
+        .or_else(|| url.strip_prefix("github.com:"))
+    {
         let parts: Vec<&str> = rest.split('/').collect();
         if parts.len() >= 2 {
             return Some((parts[0].to_string(), parts[1].to_string()));
@@ -1182,7 +1310,10 @@ fn extract_changelog_sections_since_version(
                     (&current_semver, &latest_semver, &version_opt)
                 {
                     // Include current version too: current <= version <= latest
-                    if version >= current && version <= latest && entries.len() < MAX_CHANGELOG_VERSIONS {
+                    if version >= current
+                        && version <= latest
+                        && entries.len() < MAX_CHANGELOG_VERSIONS
+                    {
                         entries.push(ChangelogEntry {
                             version: version.clone(),
                             version_string: header,
@@ -1288,9 +1419,7 @@ fn merge_changelogs(
     if total_count > MAX_CHANGELOG_VERSIONS {
         output.push(format!(
             "*Showing {} of {} versions since {}*",
-            MAX_CHANGELOG_VERSIONS,
-            total_count,
-            current_version
+            MAX_CHANGELOG_VERSIONS, total_count, current_version
         ));
     }
 
@@ -1370,11 +1499,10 @@ pub fn check_version_status(
 
     let other_tracks = build_other_tracks(current_track, current_version, all_tracks);
 
-    // Check if there's a newer version on any track (including current track)
+    // Track diagnostics are based on the user's current track only.
     let current_track_has_update = latest_parsed > current_parsed;
-    let newer_on_other_track = other_tracks.iter().any(|t| t.is_newer);
 
-    if !current_track_has_update && !newer_on_other_track {
+    if !current_track_has_update {
         return VersionStatus::UpToDate {
             current_track: current_track.to_string(),
             current_version: current_version.to_string(),
@@ -1384,48 +1512,9 @@ pub fn check_version_status(
         };
     }
 
-    // Determine which version is the "latest" we should highlight
-    // Priority: current track update > newest on other tracks
-    let (effective_latest, effective_track) = if current_track_has_update {
-        (latest_on_track.to_string(), current_track.to_string())
-    } else {
-        // Find the newest version among other tracks
-        let newest = other_tracks
-            .iter()
-            .filter(|t| t.is_newer)
-            .max_by(|a, b| {
-                let a_ver = Version::parse(&a.version).ok();
-                let b_ver = Version::parse(&b.version).ok();
-                match (a_ver, b_ver) {
-                    (Some(av), Some(bv)) => av.cmp(&bv),
-                    _ => std::cmp::Ordering::Equal,
-                }
-            });
-
-        if let Some(newest) = newest {
-            (newest.version.clone(), newest.name.clone())
-        } else {
-            // Fallback (shouldn't happen since we checked is_newer above)
-            (latest_on_track.to_string(), current_track.to_string())
-        }
-    };
-
-    let effective_latest_parsed = match Version::parse(&effective_latest) {
-        Ok(v) => v,
-        Err(_) => {
-            return VersionStatus::Unknown {
-                current_track: current_track.to_string(),
-                current_version: current_version.to_string(),
-                other_tracks,
-                changelog,
-                repository_url,
-            }
-        }
-    };
-
-    let severity = if effective_latest_parsed.major > current_parsed.major {
+    let severity = if latest_parsed.major > current_parsed.major {
         UpdateSeverity::Major
-    } else if effective_latest_parsed.minor > current_parsed.minor {
+    } else if latest_parsed.minor > current_parsed.minor {
         UpdateSeverity::Minor
     } else {
         UpdateSeverity::Patch
@@ -1434,7 +1523,7 @@ pub fn check_version_status(
     VersionStatus::UpdateAvailable {
         current_track: current_track.to_string(),
         current_version: current_version.to_string(),
-        latest_on_track: effective_latest,
+        latest_on_track: latest_on_track.to_string(),
         other_tracks,
         severity,
         changelog,
@@ -1472,7 +1561,10 @@ mod tests {
             latest: Some("0.2.0-beta.9".to_string()),
             other_tags: [
                 ("next".to_string(), "55.0.0-beta.3".to_string()),
-                ("canary".to_string(), "55.0.0-canary-20260128-67ce8d5".to_string()),
+                (
+                    "canary".to_string(),
+                    "55.0.0-canary-20260128-67ce8d5".to_string(),
+                ),
             ]
             .into_iter()
             .collect(),
@@ -1484,7 +1576,10 @@ mod tests {
         // Exact match
         assert_eq!(detect_track("55.0.0-beta.3", &dist_tags), "next");
         // Canary track
-        assert_eq!(detect_track("55.0.0-canary-20260128-67ce8d5", &dist_tags), "canary");
+        assert_eq!(
+            detect_track("55.0.0-canary-20260128-67ce8d5", &dist_tags),
+            "canary"
+        );
         // Latest track
         assert_eq!(detect_track("0.2.0-beta.9", &dist_tags), "latest");
     }
@@ -1493,9 +1588,18 @@ mod tests {
     fn test_format_time_ago() {
         let now = Utc::now();
 
-        assert_eq!(format_time_ago(now - chrono::Duration::hours(2)), "2 hours ago");
-        assert_eq!(format_time_ago(now - chrono::Duration::days(1)), "1 day ago");
-        assert_eq!(format_time_ago(now - chrono::Duration::days(5)), "5 days ago");
+        assert_eq!(
+            format_time_ago(now - chrono::Duration::hours(2)),
+            "2 hours ago"
+        );
+        assert_eq!(
+            format_time_ago(now - chrono::Duration::days(1)),
+            "1 day ago"
+        );
+        assert_eq!(
+            format_time_ago(now - chrono::Duration::days(5)),
+            "5 days ago"
+        );
     }
 
     #[test]
@@ -1514,7 +1618,11 @@ mod tests {
         ];
 
         match check_version_status("1.0.0", "2.0.0", "latest", &tracks, None, None) {
-            VersionStatus::UpdateAvailable { severity, other_tracks, .. } => {
+            VersionStatus::UpdateAvailable {
+                severity,
+                other_tracks,
+                ..
+            } => {
                 assert_eq!(severity, UpdateSeverity::Major);
                 assert_eq!(other_tracks.len(), 1);
                 assert_eq!(other_tracks[0].name, "next");
@@ -1528,6 +1636,44 @@ mod tests {
             }
             _ => panic!("Expected UpToDate"),
         }
+    }
+
+    #[test]
+    fn test_check_version_status_does_not_flag_other_track_only_updates() {
+        let tracks = vec![
+            TrackInfo {
+                name: "latest".to_string(),
+                version: "2.0.0".to_string(),
+                release_date: None,
+            },
+            TrackInfo {
+                name: "next".to_string(),
+                version: "2.1.0-beta.1".to_string(),
+                release_date: None,
+            },
+        ];
+
+        match check_version_status("2.0.0", "2.0.0", "latest", &tracks, None, None) {
+            VersionStatus::UpToDate { .. } => {}
+            _ => panic!("Expected UpToDate when only other tracks are newer"),
+        }
+    }
+
+    #[test]
+    fn test_prerelease_track_label() {
+        assert_eq!(prerelease_track_label("1.0.0-alpha.1"), Some("ALPHA"));
+        assert_eq!(prerelease_track_label("1.0.0-beta.2"), Some("BETA"));
+        assert_eq!(
+            prerelease_track_label("1.0.0-canary-20260128-abc"),
+            Some("CANARY")
+        );
+        assert_eq!(prerelease_track_label("1.0.0-nightly.0"), Some("NIGHTLY"));
+        assert_eq!(prerelease_track_label("1.0.0-rc.3"), Some("CANDIDATE"));
+        assert_eq!(
+            prerelease_track_label("1.0.0-experimental.0"),
+            Some("EXPERIMENTAL")
+        );
+        assert_eq!(prerelease_track_label("1.0.0"), None);
     }
 
     #[test]
@@ -1552,7 +1698,10 @@ mod tests {
         // Test react-native-screen-transitions URL format
         assert_eq!(
             parse_github_url("git+https://github.com/eds2002/react-native-screen-transitions.git"),
-            Some(("eds2002".to_string(), "react-native-screen-transitions".to_string()))
+            Some((
+                "eds2002".to_string(),
+                "react-native-screen-transitions".to_string()
+            ))
         );
     }
 
