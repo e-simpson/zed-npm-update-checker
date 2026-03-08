@@ -5,16 +5,14 @@ use regex::Regex;
 use semver::Version;
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use tokio::sync::Semaphore;
 use tracing::{debug, warn};
 
-const NPM_REGISTRY_URL: &str = "https://registry.npmjs.org";
-const CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
-const MAX_CONCURRENT_REQUESTS: usize = 10;
+use crate::settings::{DateDisplaySettings, DEFAULT_REGISTRY_URL};
+
 const MAX_CHANGELOG_VERSIONS: usize = 15;
-const MAX_CURRENT_TRACK_FALLBACK_RELEASES: usize = 3;
 
 lazy_static! {
     /// Regex to extract version numbers from changelog headers
@@ -299,29 +297,105 @@ impl Repository {
 }
 
 pub struct NpmRegistry {
-    client: reqwest::Client,
+    client: Arc<RwLock<reqwest::Client>>,
     /// Cache for full package info (with changelog)
     cache: Arc<DashMap<CacheKey, PackageInfo>>,
     /// Cache for version-only info (fast, no changelog)
     version_cache: Arc<DashMap<VersionCacheKey, PackageVersionInfo>>,
     /// Semaphore for limiting concurrent npm requests
-    semaphore: Arc<Semaphore>,
+    semaphore: Arc<RwLock<Arc<Semaphore>>>,
+    config: Arc<RwLock<RegistryConfig>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegistryConfig {
+    pub registry_url: String,
+    pub cache_ttl: Duration,
+    pub max_concurrent_requests: usize,
+    pub request_timeout: Duration,
+    pub date_display: DateDisplaySettings,
+}
+
+impl Default for RegistryConfig {
+    fn default() -> Self {
+        Self {
+            registry_url: DEFAULT_REGISTRY_URL.to_string(),
+            cache_ttl: Duration::from_secs(300),
+            max_concurrent_requests: 10,
+            request_timeout: Duration::from_secs(15),
+            date_display: DateDisplaySettings::default(),
+        }
+    }
 }
 
 impl NpmRegistry {
-    pub fn new() -> Self {
+    pub fn new(config: RegistryConfig) -> Self {
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(15))
+            .timeout(config.request_timeout)
             .user_agent("npm-package-json-checker-lsp")
             .build()
             .unwrap_or_default();
 
         Self {
-            client,
+            client: Arc::new(RwLock::new(client)),
             cache: Arc::new(DashMap::new()),
             version_cache: Arc::new(DashMap::new()),
-            semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_REQUESTS)),
+            semaphore: Arc::new(RwLock::new(Arc::new(Semaphore::new(
+                config.max_concurrent_requests,
+            )))),
+            config: Arc::new(RwLock::new(config)),
         }
+    }
+
+    pub fn apply_config(&self, new_config: RegistryConfig) {
+        let mut config = self.config.write().expect("registry config lock poisoned");
+        let old_config = config.clone();
+
+        if old_config.request_timeout != new_config.request_timeout {
+            let client = reqwest::Client::builder()
+                .timeout(new_config.request_timeout)
+                .user_agent("npm-package-json-checker-lsp")
+                .build()
+                .unwrap_or_default();
+
+            *self.client.write().expect("registry client lock poisoned") = client;
+        }
+
+        if old_config.max_concurrent_requests != new_config.max_concurrent_requests {
+            *self
+                .semaphore
+                .write()
+                .expect("registry semaphore lock poisoned") =
+                Arc::new(Semaphore::new(new_config.max_concurrent_requests));
+        }
+
+        if old_config.registry_url != new_config.registry_url {
+            self.cache.clear();
+            self.version_cache.clear();
+        }
+
+        *config = new_config;
+    }
+
+    pub fn config(&self) -> RegistryConfig {
+        self.config
+            .read()
+            .expect("registry config lock poisoned")
+            .clone()
+    }
+
+    fn client(&self) -> reqwest::Client {
+        self.client
+            .read()
+            .expect("registry client lock poisoned")
+            .clone()
+    }
+
+    fn semaphore(&self) -> Arc<Semaphore> {
+        self.semaphore
+            .read()
+            .expect("registry semaphore lock poisoned")
+            .clone()
     }
 
     /// Fast version check - only fetches npm registry, no GitHub API calls
@@ -331,24 +405,27 @@ impl NpmRegistry {
         package_name: &str,
         current_version: &str,
     ) -> Option<PackageVersionInfo> {
+        let config = self.config();
         let cache_key = VersionCacheKey {
             package_name: package_name.to_string(),
         };
 
         // Check cache first
         if let Some(cached) = self.version_cache.get(&cache_key) {
-            if cached.fetched_at.elapsed() < CACHE_TTL {
+            if cached.fetched_at.elapsed() < config.cache_ttl {
                 return Some(cached.clone());
             }
         }
 
         // Acquire semaphore permit for rate limiting npm requests
-        let _permit = self.semaphore.acquire().await.ok()?;
+        let semaphore = self.semaphore();
+        let _permit = semaphore.acquire().await.ok()?;
 
         // Fetch from npm registry only
-        let url = format!("{}/{}", NPM_REGISTRY_URL, package_name);
+        let url = package_registry_url(&config.registry_url, package_name);
+        let client = self.client();
 
-        let response = match self.client.get(&url).send().await {
+        let response = match client.get(&url).send().await {
             Ok(r) => r,
             Err(e) => {
                 debug!("Failed to fetch {}: {}", package_name, e);
@@ -419,6 +496,7 @@ impl NpmRegistry {
         repo_directory: Option<&str>,
         version_publish_dates: Option<&HashMap<String, DateTime<Utc>>>,
     ) -> Option<String> {
+        let config = self.config();
         let cache_key = CacheKey {
             package_name: package_name.to_string(),
             current_version: current_version.to_string(),
@@ -426,7 +504,7 @@ impl NpmRegistry {
 
         // Check if we already have this changelog cached
         if let Some(cached) = self.cache.get(&cache_key) {
-            if cached.fetched_at.elapsed() < CACHE_TTL && cached.changelog.is_some() {
+            if cached.fetched_at.elapsed() < config.cache_ttl && cached.changelog.is_some() {
                 return cached.changelog.clone();
             }
         }
@@ -439,6 +517,7 @@ impl NpmRegistry {
                 current_version,
                 latest_version,
                 version_publish_dates,
+                &config.date_display,
             )
             .await;
 
@@ -465,6 +544,7 @@ impl NpmRegistry {
         package_name: &str,
         current_version: &str,
     ) -> Option<PackageInfo> {
+        let config = self.config();
         let cache_key = CacheKey {
             package_name: package_name.to_string(),
             current_version: current_version.to_string(),
@@ -472,21 +552,23 @@ impl NpmRegistry {
 
         // Check cache first
         if let Some(cached) = self.cache.get(&cache_key) {
-            if cached.fetched_at.elapsed() < CACHE_TTL {
+            if cached.fetched_at.elapsed() < config.cache_ttl {
                 debug!("Cache hit for {}@{}", package_name, current_version);
                 return Some(cached.clone());
             }
         }
 
         // Acquire semaphore permit for rate limiting
-        let _permit = self.semaphore.acquire().await.ok()?;
+        let semaphore = self.semaphore();
+        let _permit = semaphore.acquire().await.ok()?;
 
         // Fetch from registry
-        let url = format!("{}/{}", NPM_REGISTRY_URL, package_name);
+        let url = package_registry_url(&config.registry_url, package_name);
+        let client = self.client();
 
         debug!("Fetching {}", url);
 
-        let response = match self.client.get(&url).send().await {
+        let response = match client.get(&url).send().await {
             Ok(r) => r,
             Err(e) => {
                 warn!("Failed to fetch {}: {}", package_name, e);
@@ -529,6 +611,7 @@ impl NpmRegistry {
                 current_version,
                 &latest_on_track,
                 Some(&version_publish_dates),
+                &config.date_display,
             )
             .await
         } else {
@@ -561,6 +644,7 @@ impl NpmRegistry {
         current_version: &str,
         latest_version: &str,
         version_publish_dates: Option<&HashMap<String, DateTime<Utc>>>,
+        date_display: &DateDisplaySettings,
     ) -> Option<String> {
         let (owner, repo) = match parse_github_url(repo_url) {
             Some(parsed) => parsed,
@@ -584,6 +668,7 @@ impl NpmRegistry {
                 current_version,
                 latest_version,
                 version_publish_dates,
+                date_display,
             )
             .await
         } else {
@@ -625,6 +710,7 @@ impl NpmRegistry {
                 root_changelog_result,
                 current_version,
                 latest_version,
+                date_display,
             )
         };
 
@@ -651,6 +737,7 @@ impl NpmRegistry {
         current_version: &str,
         latest_version: &str,
         version_publish_dates: Option<&HashMap<String, DateTime<Utc>>>,
+        date_display: &DateDisplaySettings,
     ) -> Option<String> {
         let files = ["CHANGELOG.md", "changelog.md", "HISTORY.md", "CHANGES.md"];
         let branches = ["main", "master"];
@@ -674,7 +761,7 @@ impl NpmRegistry {
                     owner, repo, branch, path
                 );
 
-                if let Ok(response) = self.client.get(&url).send().await {
+                if let Ok(response) = self.client().get(&url).send().await {
                     if response.status().is_success() {
                         if let Ok(content) = response.text().await {
                             let entries = extract_changelog_sections_since_version(
@@ -685,7 +772,7 @@ impl NpmRegistry {
                             );
                             if !entries.is_empty() {
                                 debug!("Found monorepo changelog at {}", url);
-                                return Some(format_changelog_entries(entries));
+                                return Some(format_changelog_entries(entries, date_display));
                             }
                         }
                     }
@@ -707,7 +794,7 @@ impl NpmRegistry {
             .await;
 
         if !releases.is_empty() {
-            return Some(format_changelog_entries(releases));
+            return Some(format_changelog_entries(releases, date_display));
         }
 
         None
@@ -729,7 +816,7 @@ impl NpmRegistry {
 
         let url = format!("https://github.com/{}/{}/releases.atom", owner, repo);
 
-        let response = match self.client.get(&url).send().await {
+        let response = match self.client().get(&url).send().await {
             Ok(r) if r.status().is_success() => r,
             _ => return vec![],
         };
@@ -816,7 +903,7 @@ impl NpmRegistry {
 
         debug!("Fetching GitHub releases atom feed for {}/{}", owner, repo);
 
-        let response = match self.client.get(&url).send().await {
+        let response = match self.client().get(&url).send().await {
             Ok(r) if r.status().is_success() => r,
             Ok(r) => {
                 debug!(
@@ -951,7 +1038,7 @@ impl NpmRegistry {
                     owner, repo, branch, file
                 );
 
-                if let Ok(response) = self.client.get(&url).send().await {
+                if let Ok(response) = self.client().get(&url).send().await {
                     if response.status().is_success() {
                         if let Ok(content) = response.text().await {
                             let entries = extract_changelog_sections_since_version(
@@ -975,8 +1062,14 @@ impl NpmRegistry {
 
 impl Default for NpmRegistry {
     fn default() -> Self {
-        Self::new()
+        Self::new(RegistryConfig::default())
     }
+}
+
+fn package_registry_url(registry_url: &str, package_name: &str) -> String {
+    let base = registry_url.trim_end_matches('/');
+    let encoded_package_name = package_name.replace('/', "%2f");
+    format!("{}/{}", base, encoded_package_name)
 }
 
 /// Detect which track the current version belongs to
@@ -1171,53 +1264,7 @@ fn build_recent_current_track_releases(
             .then_with(|| b.0.cmp(&a.0))
     });
 
-    releases
-        .into_iter()
-        .map(|(_, release)| release)
-        .take(MAX_CURRENT_TRACK_FALLBACK_RELEASES)
-        .collect()
-}
-
-/// Format time ago string
-pub fn format_time_ago(date: DateTime<Utc>) -> String {
-    let now = Utc::now();
-    let duration = now.signed_duration_since(date);
-
-    if duration.num_days() > 365 {
-        let years = duration.num_days() / 365;
-        format!("{} year{} ago", years, if years == 1 { "" } else { "s" })
-    } else if duration.num_days() > 30 {
-        let months = duration.num_days() / 30;
-        format!("{} month{} ago", months, if months == 1 { "" } else { "s" })
-    } else if duration.num_days() > 7 {
-        let weeks = duration.num_days() / 7;
-        format!("{} week{} ago", weeks, if weeks == 1 { "" } else { "s" })
-    } else if duration.num_days() > 0 {
-        format!(
-            "{} day{} ago",
-            duration.num_days(),
-            if duration.num_days() == 1 { "" } else { "s" }
-        )
-    } else if duration.num_hours() > 0 {
-        format!(
-            "{} hour{} ago",
-            duration.num_hours(),
-            if duration.num_hours() == 1 { "" } else { "s" }
-        )
-    } else if duration.num_minutes() > 0 {
-        format!(
-            "{} minute{} ago",
-            duration.num_minutes(),
-            if duration.num_minutes() == 1 { "" } else { "s" }
-        )
-    } else {
-        "just now".to_string()
-    }
-}
-
-/// Format date with time ago for display
-pub fn format_date_with_ago(date: DateTime<Utc>) -> String {
-    format!("{}, {}", date.format("%d/%m/%Y"), format_time_ago(date))
+    releases.into_iter().map(|(_, release)| release).collect()
 }
 
 /// Convert HTML content from atom feed to readable text
@@ -1497,11 +1544,14 @@ fn extract_changelog_sections_since_version(
 }
 
 /// Format changelog entries to string
-fn format_changelog_entries(entries: Vec<ChangelogEntry>) -> String {
+fn format_changelog_entries(
+    entries: Vec<ChangelogEntry>,
+    date_display: &DateDisplaySettings,
+) -> String {
     let mut output = Vec::new();
 
     for entry in entries {
-        output.push(format_changelog_header(&entry));
+        output.push(format_changelog_header(&entry, date_display));
 
         let body = entry.body.trim();
         if !body.is_empty() {
@@ -1514,7 +1564,7 @@ fn format_changelog_entries(entries: Vec<ChangelogEntry>) -> String {
     output.join("\n").trim().to_string()
 }
 
-fn format_changelog_header(entry: &ChangelogEntry) -> String {
+fn format_changelog_header(entry: &ChangelogEntry, date_display: &DateDisplaySettings) -> String {
     let base = if entry.version_string.starts_with('#') {
         entry.version_string.clone()
     } else {
@@ -1523,7 +1573,7 @@ fn format_changelog_header(entry: &ChangelogEntry) -> String {
 
     if let Some(date) = entry.release_date {
         let normalized = remove_existing_date_from_header(&base);
-        format!("{} ({})", normalized, format_date_with_ago(date))
+        format!("{} ({})", normalized, date_display.format_date_tag(date))
     } else {
         base
     }
@@ -1583,6 +1633,7 @@ fn merge_changelogs(
     changelog_file: Vec<ChangelogEntry>,
     current_version: &str,
     _latest_version: &str,
+    date_display: &DateDisplaySettings,
 ) -> String {
     // Build a map by version, preferring GitHub releases (usually more curated)
     let mut by_version: HashMap<String, ChangelogEntry> = HashMap::new();
@@ -1613,7 +1664,7 @@ fn merge_changelogs(
     let mut output = Vec::new();
 
     for entry in &entries {
-        output.push(format_changelog_header(entry));
+        output.push(format_changelog_header(entry, date_display));
 
         // Add body (trimmed)
         let body = entry.body.trim();
@@ -1818,22 +1869,23 @@ mod tests {
         let now = Utc::now();
 
         assert_eq!(
-            format_time_ago(now - chrono::Duration::hours(2)),
+            crate::settings::format_time_ago(now - chrono::Duration::hours(2)),
             "2 hours ago"
         );
         assert_eq!(
-            format_time_ago(now - chrono::Duration::days(1)),
+            crate::settings::format_time_ago(now - chrono::Duration::days(1)),
             "1 day ago"
         );
         assert_eq!(
-            format_time_ago(now - chrono::Duration::days(5)),
+            crate::settings::format_time_ago(now - chrono::Duration::days(5)),
             "5 days ago"
         );
     }
 
     #[test]
     fn test_format_date_with_ago_uses_compact_date() {
-        let formatted = format_date_with_ago(utc_date("2024-01-15T00:00:00Z"));
+        let formatted =
+            DateDisplaySettings::default().format_date_tag(utc_date("2024-01-15T00:00:00Z"));
         assert!(formatted.starts_with("15/01/2024, "));
         assert!(formatted.contains("ago"));
     }
@@ -1898,7 +1950,7 @@ mod tests {
             },
         ];
 
-        let output = format_changelog_entries(entries);
+        let output = format_changelog_entries(entries, &DateDisplaySettings::default());
 
         assert!(output.contains("## 1.2.3 (03/01/2026, "));
         assert!(output.contains("## 1.2.2"));
@@ -1914,7 +1966,7 @@ mod tests {
             release_date: Some(utc_date("2026-02-14T00:00:00Z")),
         }];
 
-        let output = format_changelog_entries(entries);
+        let output = format_changelog_entries(entries, &DateDisplaySettings::default());
 
         assert!(output.contains("## 3.3.0 (14/02/2026, "));
         assert!(!output.contains("## 3.3.0 (2026-02-14)"));
@@ -1929,7 +1981,7 @@ mod tests {
             release_date: Some(utc_date("2024-01-15T00:00:00Z")),
         }];
 
-        let output = format_changelog_entries(entries);
+        let output = format_changelog_entries(entries, &DateDisplaySettings::default());
 
         assert!(output.contains("## [4.18.2] (15/01/2024, "));
         assert!(!output.contains("## [4.18.2] - 2024-01-15"));
@@ -2206,5 +2258,70 @@ Major release
         assert_eq!(entries.len(), 8);
         assert_eq!(entries[0].version, Version::parse("10.0.0").unwrap());
         assert_eq!(entries[7].version, Version::parse("3.0.0").unwrap());
+    }
+
+    #[test]
+    fn test_package_registry_url_encodes_scoped_packages() {
+        assert_eq!(
+            package_registry_url("https://registry.npmjs.org/", "@scope/pkg"),
+            "https://registry.npmjs.org/@scope%2fpkg"
+        );
+    }
+
+    #[test]
+    fn test_apply_config_rebuilds_runtime_state_and_clears_cache_on_registry_change() {
+        let registry = NpmRegistry::default();
+
+        registry.version_cache.insert(
+            VersionCacheKey {
+                package_name: "react".to_string(),
+            },
+            PackageVersionInfo {
+                name: "react".to_string(),
+                current_track: "latest".to_string(),
+                current_version: "18.0.0".to_string(),
+                latest_on_track: "18.3.1".to_string(),
+                version_publish_dates: HashMap::new(),
+                recent_current_track_releases: vec![],
+                all_tracks: vec![],
+                repository_url: None,
+                repository_directory: None,
+                fetched_at: Instant::now(),
+            },
+        );
+
+        registry.apply_config(RegistryConfig {
+            registry_url: "https://registry.company.test".to_string(),
+            cache_ttl: Duration::from_secs(10),
+            max_concurrent_requests: 3,
+            request_timeout: Duration::from_secs(22),
+            date_display: DateDisplaySettings::default(),
+        });
+
+        assert!(registry.version_cache.is_empty());
+        assert_eq!(
+            registry.config().registry_url,
+            "https://registry.company.test".to_string()
+        );
+        assert_eq!(registry.config().max_concurrent_requests, 3);
+        assert_eq!(registry.config().request_timeout, Duration::from_secs(22));
+    }
+
+    #[test]
+    fn test_build_recent_current_track_releases_returns_all_candidates() {
+        let release_dates = HashMap::from([
+            ("1.0.1".to_string(), utc_date("2026-01-01T00:00:00Z")),
+            ("1.0.2".to_string(), utc_date("2026-01-02T00:00:00Z")),
+            ("1.0.3".to_string(), utc_date("2026-01-03T00:00:00Z")),
+            ("1.0.4".to_string(), utc_date("2026-01-04T00:00:00Z")),
+            ("1.0.5".to_string(), utc_date("2026-01-05T00:00:00Z")),
+        ]);
+
+        let releases =
+            build_recent_current_track_releases("latest", "1.0.0", "1.0.5", &release_dates);
+
+        assert_eq!(releases.len(), 4);
+        assert_eq!(releases[0].version, "1.0.4");
+        assert_eq!(releases[3].version, "1.0.1");
     }
 }

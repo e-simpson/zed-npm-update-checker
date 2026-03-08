@@ -8,9 +8,10 @@ use tracing::{debug, info};
 
 use crate::parser::{parse_package_json, Dependency};
 use crate::registry::{
-    check_version_status, format_date_with_ago, prerelease_track_label, NpmRegistry, TrackUpdate,
-    VersionStatus,
+    check_version_status, prerelease_track_label, NpmRegistry, RegistryConfig, TrackUpdate,
+    VersionRelease, VersionStatus,
 };
+use crate::settings::{ExtensionSettings, ExtensionSettingsPatch};
 
 const LSP_NAME: &str = "npm-package-json-checker-lsp";
 
@@ -36,14 +37,62 @@ struct Backend {
     client: Client,
     registry: Arc<NpmRegistry>,
     documents: Arc<RwLock<HashMap<Url, DocumentState>>>,
+    settings: Arc<RwLock<ExtensionSettings>>,
 }
 
 impl Backend {
     fn new(client: Client) -> Self {
+        let settings = ExtensionSettings::default();
         Self {
             client,
-            registry: Arc::new(NpmRegistry::new()),
+            registry: Arc::new(NpmRegistry::new(Self::registry_config(&settings))),
             documents: Arc::new(RwLock::new(HashMap::new())),
+            settings: Arc::new(RwLock::new(settings)),
+        }
+    }
+
+    fn registry_config(settings: &ExtensionSettings) -> RegistryConfig {
+        RegistryConfig {
+            registry_url: settings.registry_url.clone(),
+            cache_ttl: std::time::Duration::from_secs(settings.cache_ttl_seconds),
+            max_concurrent_requests: settings.max_concurrent_requests,
+            request_timeout: std::time::Duration::from_secs(settings.request_timeout_seconds),
+            date_display: settings.date_display.clone(),
+        }
+    }
+
+    async fn update_settings(&self, patch: ExtensionSettingsPatch) {
+        let updated = {
+            let mut settings = self.settings.write().await;
+            settings.apply_patch(patch);
+            settings.clone()
+        };
+
+        self.registry.apply_config(Self::registry_config(&updated));
+    }
+
+    async fn replace_settings(&self, new_settings: ExtensionSettings) {
+        {
+            let mut settings = self.settings.write().await;
+            *settings = new_settings.clone();
+        }
+
+        self.registry
+            .apply_config(Self::registry_config(&new_settings));
+    }
+
+    async fn current_settings(&self) -> ExtensionSettings {
+        self.settings.read().await.clone()
+    }
+
+    async fn refresh_all_diagnostics(&self) {
+        let uris: Vec<Url> = {
+            let docs = self.documents.read().await;
+            docs.keys().cloned().collect()
+        };
+
+        for uri in uris {
+            self.publish_diagnostics(&uri).await;
         }
     }
 
@@ -303,6 +352,7 @@ impl Backend {
 
     /// Publish diagnostics for outdated packages
     async fn publish_diagnostics(&self, uri: &Url) {
+        let settings = self.current_settings().await;
         let docs = self.documents.read().await;
         let Some(state) = docs.get(uri) else {
             return;
@@ -318,7 +368,7 @@ impl Backend {
                     current_track,
                     current_track_release_date: _,
                     current_version,
-                    other_tracks: _,
+                    other_tracks,
                     ..
                 } = status
                 {
@@ -326,48 +376,79 @@ impl Backend {
                     let latest_pre_label = prerelease_track_label(latest_on_track);
 
                     // For prerelease channels, only surface updates that stay on the same channel.
-                    if current_pre_label.is_some() && current_pre_label != latest_pre_label {
-                        continue;
+                    if !(current_pre_label.is_some() && current_pre_label != latest_pre_label) {
+                        let update_label = current_pre_label
+                            .filter(|label| Some(*label) == latest_pre_label)
+                            .unwrap_or_else(|| severity.label());
+
+                        let message = format!("{} → {}", update_label, latest_on_track);
+
+                        let diagnostic_severity = if current_pre_label.is_some() {
+                            DiagnosticSeverity::HINT
+                        } else {
+                            DiagnosticSeverity::INFORMATION
+                        };
+
+                        diagnostics.push(Diagnostic {
+                            range: Range {
+                                start: Position {
+                                    line: dep.line,
+                                    character: dep.version_start_col,
+                                },
+                                end: Position {
+                                    line: dep.line,
+                                    character: dep.version_end_col,
+                                },
+                            },
+                            severity: Some(diagnostic_severity),
+                            code: Some(NumberOrString::String("outdated-dependency".to_string())),
+                            source: Some(LSP_NAME.to_string()),
+                            message,
+                            related_information: None,
+                            tags: None,
+                            code_description: None,
+                            data: Some(serde_json::json!({
+                                "package": dep.name,
+                                "current": dep.version,
+                                "latest": latest_on_track,
+                                "severity": update_label,
+                                "track": current_track,
+                            })),
+                        });
                     }
 
-                    let update_label = current_pre_label
-                        .filter(|label| Some(*label) == latest_pre_label)
-                        .unwrap_or_else(|| severity.label());
+                    if settings.show_experimental_tracks {
+                        let newer_other_tracks =
+                            collect_newer_track_summaries(other_tracks, &settings);
 
-                    let message = format!("{} → {}", update_label, latest_on_track);
-
-                    let diagnostic_severity = if current_pre_label.is_some() {
-                        DiagnosticSeverity::HINT
-                    } else {
-                        DiagnosticSeverity::INFORMATION
-                    };
-
-                    diagnostics.push(Diagnostic {
-                        range: Range {
-                            start: Position {
-                                line: dep.line,
-                                character: dep.version_start_col,
-                            },
-                            end: Position {
-                                line: dep.line,
-                                character: dep.version_end_col,
-                            },
-                        },
-                        severity: Some(diagnostic_severity),
-                        code: Some(NumberOrString::String("outdated-dependency".to_string())),
-                        source: Some(LSP_NAME.to_string()),
-                        message,
-                        related_information: None,
-                        tags: None,
-                        code_description: None,
-                        data: Some(serde_json::json!({
-                            "package": dep.name,
-                            "current": dep.version,
-                            "latest": latest_on_track,
-                            "severity": update_label,
-                            "track": current_track,
-                        })),
-                    });
+                        if !newer_other_tracks.is_empty() {
+                            diagnostics.push(Diagnostic {
+                                range: Range {
+                                    start: Position {
+                                        line: dep.line,
+                                        character: dep.version_start_col,
+                                    },
+                                    end: Position {
+                                        line: dep.line,
+                                        character: dep.version_end_col,
+                                    },
+                                },
+                                severity: Some(DiagnosticSeverity::HINT),
+                                code: Some(NumberOrString::String(
+                                    "outdated-dependency-alt-track".to_string(),
+                                )),
+                                source: Some(LSP_NAME.to_string()),
+                                message: newer_other_tracks.join(", "),
+                                related_information: None,
+                                tags: None,
+                                code_description: None,
+                                data: Some(serde_json::json!({
+                                    "package": dep.name,
+                                    "track_updates": newer_other_tracks,
+                                })),
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -415,6 +496,7 @@ impl Backend {
 
     /// Generate code actions for a range
     async fn generate_code_actions(&self, uri: &Url, range: Range) -> Vec<CodeActionOrCommand> {
+        let settings = self.current_settings().await;
         let docs = self.documents.read().await;
         let Some(state) = docs.get(uri) else {
             return vec![];
@@ -445,7 +527,9 @@ impl Backend {
                         let current_track_time = current_track_release_date
                             .as_ref()
                             .copied()
-                            .map(|date| format!(" ({})", format_date_with_ago(date)))
+                            .map(|date| {
+                                format!(" ({})", settings.date_display.format_date_tag(date))
+                            })
                             .unwrap_or_default();
                         let preferred_title = if current_track == "latest" {
                             format!(
@@ -458,7 +542,7 @@ impl Backend {
                                 type_label,
                                 latest_on_track,
                                 current_track,
-                                format_date_with_ago(*date)
+                                settings.date_display.format_date_tag(*date)
                             )
                         } else {
                             format!(
@@ -477,12 +561,15 @@ impl Backend {
                         actions.push(CodeActionOrCommand::CodeAction(update_action));
 
                         // 2. Fallback options on current track (older than latest, newer than current)
-                        for release in recent_current_track_releases {
+                        for release in recent_release_actions(
+                            recent_current_track_releases,
+                            settings.recent_releases_in_code_actions,
+                        ) {
                             let title = format!(
                                 "- Update to {} {} ({})",
                                 current_track,
                                 release.version,
-                                format_date_with_ago(release.release_date)
+                                settings.date_display.format_date_tag(release.release_date)
                             );
 
                             let fallback_action =
@@ -506,7 +593,7 @@ impl Backend {
 
                         for track in sorted_tracks {
                             let date_str = if let Some(date) = track.release_date {
-                                format!(" ({})", format_date_with_ago(date))
+                                format!(" ({})", settings.date_display.format_date_tag(date))
                             } else {
                                 String::new()
                             };
@@ -541,7 +628,7 @@ impl Backend {
 
                         for track in sorted_tracks {
                             let date_str = if let Some(date) = track.release_date {
-                                format!(" ({})", format_date_with_ago(date))
+                                format!(" ({})", settings.date_display.format_date_tag(date))
                             } else {
                                 String::new()
                             };
@@ -667,6 +754,36 @@ fn create_update_action(
     }
 }
 
+fn collect_newer_track_summaries(
+    other_tracks: &[TrackUpdate],
+    settings: &ExtensionSettings,
+) -> Vec<String> {
+    let _ = settings;
+
+    other_tracks
+        .iter()
+        .filter(|track| track.is_newer)
+        .map(|track| {
+            let label = prerelease_track_label(&track.version)
+                .map(str::to_string)
+                .unwrap_or_else(|| track.name.to_ascii_uppercase());
+
+            format!("{} → {}", label, track.version)
+        })
+        .collect()
+}
+
+fn recent_release_actions<'a>(
+    releases: &'a [VersionRelease],
+    limit: usize,
+) -> Vec<&'a VersionRelease> {
+    if limit == 0 {
+        return Vec::new();
+    }
+
+    releases.iter().take(limit).collect()
+}
+
 /// Format the updated version, preserving the prefix (^, ~, etc.)
 fn format_updated_version(current: &str, latest: &str) -> String {
     if current.starts_with('^') {
@@ -719,7 +836,11 @@ fn extract_github_owner_repo(url: &str) -> Option<(String, String)> {
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
-    async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
+    async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
+        let initial_settings =
+            ExtensionSettings::from_sources_or_default(params.initialization_options.as_ref());
+        self.replace_settings(initial_settings).await;
+
         info!("{} initializing", LSP_NAME);
 
         Ok(InitializeResult {
@@ -791,6 +912,18 @@ impl LanguageServer for Backend {
         docs.remove(&params.text_document.uri);
     }
 
+    async fn did_change_configuration(&self, params: DidChangeConfigurationParams) {
+        if let Some(patch) = ExtensionSettingsPatch::from_value(&params.settings) {
+            self.update_settings(patch).await;
+            self.refresh_all_diagnostics().await;
+
+            let _ = self
+                .client
+                .send_request::<lsp_types::request::InlayHintRefreshRequest>(())
+                .await;
+        }
+    }
+
     async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
         debug!("inlay_hint request for: {}", params.text_document.uri);
         let hints = self.generate_inlay_hints(&params.text_document.uri).await;
@@ -810,6 +943,7 @@ impl LanguageServer for Backend {
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        let settings = self.current_settings().await;
         let uri = &params.text_document_position_params.text_document.uri;
         let position = params.text_document_position_params.position;
 
@@ -947,7 +1081,7 @@ impl LanguageServer for Backend {
                     let mut track_lines = vec![];
                     for track in all_tracks {
                         let date_str = if let Some(date) = track.release_date {
-                            format!(" ({})", format_date_with_ago(date))
+                            format!(" ({})", settings.date_display.format_date_tag(date))
                         } else {
                             String::new()
                         };
@@ -1015,4 +1149,68 @@ pub async fn start() {
     tracing::debug!("Starting server");
     Server::new(stdin, stdout, socket).serve(service).await;
     tracing::debug!("Server stopped");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::settings::{DateDisplaySettings, DateTagMode};
+    use chrono::{DateTime, Utc};
+
+    fn utc_date(input: &str) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(input)
+            .unwrap()
+            .with_timezone(&Utc)
+    }
+
+    #[test]
+    fn collect_newer_track_summaries_filters_and_formats() {
+        let mut settings = ExtensionSettings::default();
+        settings.date_display = DateDisplaySettings {
+            mode: DateTagMode::Date,
+            format: "%Y-%m-%d".to_string(),
+        };
+
+        let summaries = collect_newer_track_summaries(
+            &[
+                TrackUpdate {
+                    name: "next".to_string(),
+                    version: "2.1.0-beta.1".to_string(),
+                    release_date: Some(utc_date("2026-02-10T00:00:00Z")),
+                    is_newer: true,
+                },
+                TrackUpdate {
+                    name: "latest".to_string(),
+                    version: "2.0.0".to_string(),
+                    release_date: Some(utc_date("2026-02-11T00:00:00Z")),
+                    is_newer: false,
+                },
+            ],
+            &settings,
+        );
+
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0], "BETA → 2.1.0-beta.1");
+    }
+
+    #[test]
+    fn recent_release_actions_respects_limit() {
+        let releases = vec![
+            VersionRelease {
+                version: "1.0.3".to_string(),
+                release_date: utc_date("2026-01-03T00:00:00Z"),
+            },
+            VersionRelease {
+                version: "1.0.2".to_string(),
+                release_date: utc_date("2026-01-02T00:00:00Z"),
+            },
+            VersionRelease {
+                version: "1.0.1".to_string(),
+                release_date: utc_date("2026-01-01T00:00:00Z"),
+            },
+        ];
+
+        assert!(recent_release_actions(&releases, 0).is_empty());
+        assert_eq!(recent_release_actions(&releases, 2).len(), 2);
+    }
 }

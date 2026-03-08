@@ -1,0 +1,1000 @@
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 19
+}
+2026-02-28T09:48:17-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 16
+}
+2026-02-28T09:48:17-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 15
+}
+2026-02-28T09:48:17-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 15
+}
+2026-02-28T09:48:19-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 19
+}
+2026-02-28T09:48:19-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 18
+}
+2026-02-28T09:48:19-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 13
+}
+2026-02-28T09:48:19-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 11
+}
+2026-02-28T09:48:20-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 12
+}
+2026-02-28T09:48:21-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 12
+}
+2026-02-28T09:48:21-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 12
+}
+2026-02-28T09:48:21-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 11
+}
+2026-02-28T09:50:00-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 32
+}
+2026-02-28T09:50:02-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 15
+}
+2026-02-28T09:50:02-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 14
+}
+2026-02-28T09:50:22-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-02-28T09:50:25-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-02-28T09:50:27-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-02-28T09:50:32-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-02-28T09:50:47-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-02-28T09:50:55-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-02-28T09:51:35-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-02-28T09:51:38-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-02-28T09:51:47-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-02-28T09:51:51-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-02-28T09:51:58-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-02-28T09:52:05-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-02-28T09:52:12-05:00 ERROR [editor] No entry in selection_history found for undo. This may correspond to a bug where undo does not update the selection. If this is occurring, please add details to https://github.com/zed-industries/zed/issues/22692
+2026-02-28T09:52:12-05:00 ERROR [editor] No entry in selection_history found for undo. This may correspond to a bug where undo does not update the selection. If this is occurring, please add details to https://github.com/zed-industries/zed/issues/22692
+2026-02-28T09:52:12-05:00 ERROR [editor] No entry in selection_history found for undo. This may correspond to a bug where undo does not update the selection. If this is occurring, please add details to https://github.com/zed-industries/zed/issues/22692
+2026-02-28T09:52:12-05:00 ERROR [editor] No entry in selection_history found for undo. This may correspond to a bug where undo does not update the selection. If this is occurring, please add details to https://github.com/zed-industries/zed/issues/22692
+2026-02-28T09:52:14-05:00 ERROR [editor] No entry in selection_history found for redo. This may correspond to a bug where undo does not update the selection. If this is occurring, please add details to https://github.com/zed-industries/zed/issues/22692
+2026-02-28T09:52:14-05:00 ERROR [editor] No entry in selection_history found for undo. This may correspond to a bug where undo does not update the selection. If this is occurring, please add details to https://github.com/zed-industries/zed/issues/22692
+2026-02-28T09:52:15-05:00 ERROR [editor] No entry in selection_history found for redo. This may correspond to a bug where undo does not update the selection. If this is occurring, please add details to https://github.com/zed-industries/zed/issues/22692
+2026-02-28T09:52:15-05:00 ERROR [editor] No entry in selection_history found for redo. This may correspond to a bug where undo does not update the selection. If this is occurring, please add details to https://github.com/zed-industries/zed/issues/22692
+2026-02-28T09:52:15-05:00 ERROR [editor] No entry in selection_history found for redo. This may correspond to a bug where undo does not update the selection. If this is occurring, please add details to https://github.com/zed-industries/zed/issues/22692
+2026-02-28T09:52:16-05:00 ERROR [editor] No entry in selection_history found for undo. This may correspond to a bug where undo does not update the selection. If this is occurring, please add details to https://github.com/zed-industries/zed/issues/22692
+2026-02-28T09:52:31-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-02-28T09:52:51-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-02-28T09:52:57-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-02-28T09:52:58-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-02-28T09:53:24-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T09:53:24-05:00 WARN  [project::lsp_store] language server 3: failed to unregister workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files. not registered.
+2026-02-28T09:53:24-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T09:53:24-05:00 WARN  [project::lsp_store] language server 3: failed to unregister workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files. not registered.
+2026-02-28T09:53:24-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T09:53:24-05:00 WARN  [project::lsp_store] language server 3: failed to unregister workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files. not registered.
+2026-02-28T09:53:24-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 245
+}
+2026-02-28T09:53:25-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 54
+}
+2026-02-28T09:53:25-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 105
+}
+2026-02-28T09:53:25-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 192
+}
+2026-02-28T09:53:25-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T09:53:25-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T09:53:25-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 59
+}
+2026-02-28T09:53:25-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T09:53:25-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T09:53:25-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 126
+}
+2026-02-28T09:53:25-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T09:53:25-05:00 WARN  [project::lsp_store] language server 3: failed to unregister workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files. not registered.
+2026-02-28T09:53:26-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 977
+}
+2026-02-28T09:53:26-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T09:53:26-05:00 WARN  [project::lsp_store] language server 3: failed to unregister workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files. not registered.
+2026-02-28T09:53:26-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 1013
+}
+2026-02-28T09:53:26-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 51
+}
+2026-02-28T09:53:26-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 41
+}
+2026-02-28T09:53:26-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 74
+}
+2026-02-28T09:53:26-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 96
+}
+2026-02-28T09:53:26-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 102
+}
+2026-02-28T09:53:26-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 18
+}
+2026-02-28T09:53:27-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T09:53:27-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T09:53:27-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 40
+}
+2026-02-28T09:53:27-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 101
+}
+2026-02-28T09:53:27-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T09:53:27-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T09:53:27-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 21
+}
+2026-02-28T09:53:27-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 13
+}
+2026-02-28T09:53:27-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T09:53:27-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T09:53:27-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 15
+}
+2026-02-28T09:53:27-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 21
+}
+2026-02-28T09:53:27-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T09:53:27-05:00 WARN  [project::lsp_store] language server 3: failed to unregister workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files. not registered.
+2026-02-28T09:53:28-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 14
+}
+2026-02-28T09:53:28-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 33
+}
+2026-02-28T09:59:01-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-02-28T10:01:43-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-02-28T10:01:52-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T10:01:52-05:00 WARN  [project::lsp_store] language server 3: failed to unregister workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files. not registered.
+2026-02-28T10:01:53-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T10:01:53-05:00 WARN  [project::lsp_store] language server 3: failed to unregister workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files. not registered.
+2026-02-28T10:01:53-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 97
+}
+2026-02-28T10:01:53-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 129
+}
+2026-02-28T10:01:53-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 41
+}
+2026-02-28T10:01:53-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 85
+}
+2026-02-28T10:01:53-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T10:01:53-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T10:01:53-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 27
+}
+2026-02-28T10:01:53-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 39
+}
+2026-02-28T10:01:54-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T10:01:54-05:00 WARN  [project::lsp_store] language server 3: failed to unregister workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files. not registered.
+2026-02-28T10:01:55-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 208
+}
+2026-02-28T10:01:55-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 129
+}
+2026-02-28T10:13:23-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T10:13:23-05:00 WARN  [project::lsp_store] language server 3: failed to unregister workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files. not registered.
+2026-02-28T10:13:24-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/components/usecase/nodegraph/d3/D3ContextGraphViewer.tsx",
+  "state": 1,
+  "validationTime": 502
+}
+2026-02-28T10:13:24-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 528
+}
+2026-02-28T10:13:24-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/workers/agents/systemPrompt.ts",
+  "state": 1,
+  "validationTime": 527
+}
+2026-02-28T10:13:24-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/components/usecase/nodegraph/d3/D3ContextGraphViewer.tsx",
+  "state": 1,
+  "validationTime": 95
+}
+2026-02-28T10:13:24-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/components/usecase/nodegraph/d3/D3ContextGraphViewer.tsx",
+  "state": 1,
+  "validationTime": 194
+}
+2026-02-28T10:13:26-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-02-28T10:13:32-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/components/usecase/nodegraph/d3/D3ContextGraphViewer.tsx",
+  "state": 1,
+  "validationTime": 122
+}
+2026-02-28T10:13:33-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/components/usecase/nodegraph/d3/D3ContextGraphViewer.tsx",
+  "state": 1,
+  "validationTime": 91
+}
+2026-02-28T10:33:42-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-02-28T10:39:28-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 1756
+}
+2026-02-28T10:40:31-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/IndexView.tsx",
+  "state": 1,
+  "validationTime": 123
+}
+2026-02-28T10:42:10-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/app/chat-explore.tsx",
+  "state": 1,
+  "validationTime": 38
+}
+2026-02-28T10:42:10-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/app/chat.tsx",
+  "state": 1,
+  "validationTime": 152
+}
+2026-02-28T10:59:01-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-02-28T11:01:29-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 137
+}
+2026-02-28T11:03:14-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/IndexView.tsx",
+  "state": 1,
+  "validationTime": 164
+}
+2026-02-28T11:03:51-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 90
+}
+2026-02-28T11:04:49-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 100
+}
+2026-02-28T11:28:30-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 148
+}
+2026-02-28T11:28:30-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 114
+}
+2026-02-28T11:28:30-05:00 WARN  [project::lsp_store] Get completion via vtsls failed: Request textDocument/completion failed with message: Reduce of empty array with no initial value
+2026-02-28T11:28:30-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 53
+}
+2026-02-28T11:28:31-05:00 ERROR [editor] No entry in selection_history found for undo. This may correspond to a bug where undo does not update the selection. If this is occurring, please add details to https://github.com/zed-industries/zed/issues/22692
+2026-02-28T11:28:31-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 50
+}
+2026-02-28T11:28:32-05:00 ERROR [editor] No entry in selection_history found for redo. This may correspond to a bug where undo does not update the selection. If this is occurring, please add details to https://github.com/zed-industries/zed/issues/22692
+2026-02-28T11:28:32-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 45
+}
+2026-02-28T11:28:33-05:00 ERROR [editor] No entry in selection_history found for undo. This may correspond to a bug where undo does not update the selection. If this is occurring, please add details to https://github.com/zed-industries/zed/issues/22692
+2026-02-28T11:28:33-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 40
+}
+2026-02-28T11:28:33-05:00 ERROR [editor] No entry in selection_history found for redo. This may correspond to a bug where undo does not update the selection. If this is occurring, please add details to https://github.com/zed-industries/zed/issues/22692
+2026-02-28T11:28:33-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 35
+}
+2026-02-28T11:28:33-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 43
+}
+2026-02-28T11:28:35-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 34
+}
+2026-02-28T11:28:35-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 33
+}
+2026-02-28T11:28:35-05:00 WARN  [project::lsp_store] Get completion via vtsls failed: Request textDocument/completion failed with message: Reduce of empty array with no initial value
+2026-02-28T11:28:36-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 35
+}
+2026-02-28T11:28:36-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 34
+}
+2026-02-28T11:28:36-05:00 WARN  [project::lsp_store] Get completion via vtsls failed: Request textDocument/completion failed with message: Reduce of empty array with no initial value
+2026-02-28T11:59:01-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-02-28T13:23:42-05:00 INFO  [zed::reliability] hang detected, trace file saved at: /Users/Home/Library/Application Support/Zed/hang_traces/hang-2026-02-28_13-23-24.miniprof
+2026-02-28T13:24:58-05:00 INFO  [zed::reliability] hang detected, trace file saved at: /Users/Home/Library/Application Support/Zed/hang_traces/hang-2026-02-28_13-24-26.miniprof
+2026-02-28T13:24:58-05:00 INFO  [project::lsp_store] stopping language server json-language-server
+2026-02-28T13:24:58-05:00 INFO  [project::lsp_store] stopping language server package-version-server
+2026-02-28T13:24:58-05:00 INFO  [project::lsp_store] stopping language server npm-package-json-checker-lsp
+2026-02-28T13:24:59-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-02-28T13:24:59-05:00 WARN  [project::lsp_store] language server 3: failed to unregister workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files. not registered.
+2026-02-28T13:25:01-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 629
+}
+2026-02-28T13:25:01-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 297
+}
+2026-02-28T13:29:49-05:00 INFO  [zed::reliability] hang detected, trace file saved at: /Users/Home/Library/Application Support/Zed/hang_traces/hang-2026-02-28_13-29-47.miniprof
+2026-02-28T13:31:23-05:00 INFO  [zed::reliability] hang detected, trace file saved at: /Users/Home/Library/Application Support/Zed/hang_traces/hang-2026-02-28_13-31-20.miniprof
+2026-02-28T13:31:27-05:00 INFO  [lsp] Language server with id 8 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 255
+}
+2026-02-28T14:02:15-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-02-28T15:02:15-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-01T09:49:58-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-01T10:49:58-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-01T12:26:11-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-01T12:26:11-05:00 INFO  [auto_update] auto-update check failed: error:error sending request for url (https://cloud.zed.dev/releases/stable/latest/asset?asset=zed&os=macos&arch=aarch64&metrics_id=b2e6bfd5-d519-43c5-a0b4-9a9b532cb7fb&system_id=b4a0d98c-c6ed-461f-903b-266f78f45249&is_staff=false)
+
+Caused by:
+    0: client error (Connect)
+    1: dns error
+    2: failed to lookup address information: nodename nor servname provided, or not known
+2026-03-01T17:56:33-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-01T19:07:07-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-01T23:14:22-05:00 INFO  [zed::reliability] hang detected, trace file saved at: /Users/Home/Library/Application Support/Zed/hang_traces/hang-2026-03-01_23-14-06.miniprof
+2026-03-02T09:24:35-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-02T10:24:36-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-02T11:24:36-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-02T12:24:36-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-02T13:24:36-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-02T14:24:36-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-02T15:10:14-05:00 ERROR [project::context_server_store] Failed to create context server configuration from settings: from extension "Firecrawl MCP Server" version 0.0.4: missing field `firecrawl_api_key`
+2026-03-02T15:10:14-05:00 ERROR [project::context_server_store] Failed to create context server configuration from settings: from extension "Firecrawl MCP Server" version 0.0.4: missing field `firecrawl_api_key`
+2026-03-02T15:10:15-05:00 INFO  [assistant_text_thread::text_thread_store] registering context server command: "web_search_help"
+2026-03-02T15:10:15-05:00 INFO  [assistant_text_thread::text_thread_store] registering context server command: "code_search_help"
+2026-03-02T15:10:16-05:00 INFO  [assistant_text_thread::text_thread_store] registering context server command: "web_search_help"
+2026-03-02T15:10:16-05:00 INFO  [assistant_text_thread::text_thread_store] registering context server command: "code_search_help"
+2026-03-02T15:10:41-05:00 ERROR [gpui::app] timed out waiting on app_will_quit
+2026-03-02T22:10:01-05:00 INFO  [zed] ========== starting zed version 0.225.10+stable.184.7c950f7b7c11ed485b0e7d72216ca36ebc86b58b, sha 7c950f7 ==========
+2026-03-02T22:10:01-05:00 INFO  [crashes] spawning crash handler process
+2026-03-02T22:10:01-05:00 INFO  [zed] Using git binary path: "/Applications/Zed.app/Contents/MacOS/git"
+2026-03-02T22:10:01-05:00 INFO  [crashes] connected to crash handler process after 100ms
+2026-03-02T22:10:01-05:00 INFO  [crashes] crash handler registered
+2026-03-02T22:10:01-05:00 INFO  [extension_host] extensions updated. loading 23, reloading 0, unloading 0
+2026-03-02T22:10:01-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-02T22:10:01-05:00 WARN  [theme] Theme "Norrsken Svalbard" is using a deprecated style property: scrollbar_thumb.background. Use `scrollbar.thumb.background` instead.
+2026-03-02T22:10:01-05:00 WARN  [theme] Theme "Norrsken Kiruna" is using a deprecated style property: scrollbar_thumb.background. Use `scrollbar.thumb.background` instead.
+2026-03-02T22:10:01-05:00 WARN  [theme] Theme "Norrsken Reykjavík" is using a deprecated style property: scrollbar_thumb.background. Use `scrollbar.thumb.background` instead.
+2026-03-02T22:10:01-05:00 INFO  [workspace] Rendered first frame
+2026-03-02T22:10:02-05:00 INFO  [client] set status on client 0: Authenticating
+2026-03-02T22:10:02-05:00 WARN  [theme] Theme "New Darcula" is using a deprecated style property: scrollbar_thumb.background. Use `scrollbar.thumb.background` instead.
+2026-03-02T22:10:02-05:00 INFO  [extension_host] installing extension vscode-dark-modern 0.1.2
+2026-03-02T22:10:03-05:00 INFO  [util] set environment variables from shell:/bin/zsh, path:/Users/Home/.config/kaku/zsh/bin:/Users/Home/.opencode/bin:/Users/Home/.local/bin:/Users/Home/.antigravity/antigravity/bin:/Users/Home/.nvm/versions/node/v22.16.0/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/pmk/env/global/bin:/Library/Apple/usr/bin:/opt/zerobrew/prefix/bin:/Users/Home/.cargo/bin:/Users/Home/Library/Application Support/JetBrains/Toolbox/scripts:/Users/Home/Developer/flutter/bin:/Users/Home/.pub-cache/bin:/opt/homebrew/opt/jpeg/bin:/Users/Home/.codeium/windsurf/bin:/Users/Home/.cargo/bin:/Users/Home/.bun/bin:/opt/homebrew/opt/openjdk@17/bin:/Users/Home/Library/Android/sdk/platform-tools:/Users/Home/Library/Android/sdk/tools:/Users/Home/Library/Android/sdk/tools/bin:/Users/Home/Library/Android/sdk/emulator
+2026-03-02T22:10:04-05:00 WARN  [theme] Theme "Norrsken Svalbard" is using a deprecated style property: scrollbar_thumb.background. Use `scrollbar.thumb.background` instead.
+2026-03-02T22:10:04-05:00 WARN  [theme] Theme "Norrsken Kiruna" is using a deprecated style property: scrollbar_thumb.background. Use `scrollbar.thumb.background` instead.
+2026-03-02T22:10:04-05:00 WARN  [theme] Theme "Norrsken Reykjavík" is using a deprecated style property: scrollbar_thumb.background. Use `scrollbar.thumb.background` instead.
+2026-03-02T22:10:04-05:00 INFO  [extension_host] rebuilt extension index in 29.804792ms
+2026-03-02T22:10:04-05:00 INFO  [extension_host] extensions updated. loading 0, reloading 1, unloading 0
+2026-03-02T22:10:04-05:00 INFO  [node_runtime] using Node.js found on PATH: SystemNodeRuntime { node: "/Users/Home/.nvm/versions/node/v22.16.0/bin/node", npm: "/Users/Home/.nvm/versions/node/v22.16.0/bin/npm", global_node_modules: "/Users/Home/.nvm/versions/node/v22.16.0/lib/node_modules\n", scratch_dir: "/Users/Home/Library/Application Support/Zed/node" }
+2026-03-02T22:10:05-05:00 ERROR [project::context_server_store] Failed to create context server configuration from settings: from extension "Firecrawl MCP Server" version 0.0.4: missing field `firecrawl_api_key`
+2026-03-02T22:10:07-05:00 INFO  [assistant_text_thread::text_thread_store] registering context server command: "web_search_help"
+2026-03-02T22:10:07-05:00 INFO  [assistant_text_thread::text_thread_store] registering context server command: "code_search_help"
+2026-03-02T22:10:20-05:00 INFO  [client] set status on client 124578: Authenticated
+2026-03-02T22:10:27-05:00 ERROR [crates/fs/src/fs_watcher.rs:233] Error { kind: WatchNotFound, paths: [] }
+2026-03-02T22:10:28-05:00 ERROR [project::context_server_store] Failed to create context server configuration from settings: from extension "Firecrawl MCP Server" version 0.0.4: missing field `firecrawl_api_key`
+2026-03-02T22:10:29-05:00 ERROR [crates/git/src/repository.rs:860] Error { code: -3, klass: 6, message: "could not find repository at '/Users/Home/Development/Business/opine/.git-date-test'" }
+2026-03-02T22:10:29-05:00 INFO  [lsp] starting language server process. binary path: "/Users/Home/.nvm/versions/node/v22.16.0/bin/node", working directory: "/Users/Home/Development/Business/opine", args: ["--max-old-space-size=8192", "/Users/Home/Library/Application Support/Zed/languages/eslint/vscode-eslint-2.4.4/vscode-eslint/server/out/eslintServer.js", "--stdio"]
+2026-03-02T22:10:29-05:00 INFO  [lsp] starting language server process. binary path: "/Users/Home/.nvm/versions/node/v22.16.0/bin/node", working directory: "/Users/Home/Development/Business/opine", args: ["/Users/Home/Development/Business/opine/node_modules/oxfmt/bin/oxfmt", "--lsp"]
+2026-03-02T22:10:29-05:00 INFO  [lsp] starting language server process. binary path: "/Users/Home/.nvm/versions/node/v22.16.0/bin/node", working directory: "/Users/Home/Development/Business/opine", args: ["/Users/Home/Development/Business/opine/node_modules/oxlint/bin/oxlint", "--lsp"]
+2026-03-02T22:10:29-05:00 INFO  [lsp] starting language server process. binary path: "/Users/Home/.nvm/versions/node/v22.16.0/bin/node", working directory: "/Users/Home/Development/Business/opine", args: ["/Users/Home/Library/Application Support/Zed/extensions/work/graphql/node_modules/graphql-language-service-cli/bin/graphql.js", "server", "-m", "stream", "-c", "/Users/Home/Development/Business/opine"]
+2026-03-02T22:10:29-05:00 INFO  [lsp] starting language server process. binary path: "/opt/homebrew/bin/biome", working directory: "/Users/Home/Development/Business/opine", args: ["lsp-proxy"]
+2026-03-02T22:10:29-05:00 ERROR [crates/project/src/git_store.rs:6045] opening repository at "/Users/Home/Development/Business/opine/.git-date-test/.git"
+2026-03-02T22:10:29-05:00 INFO  [assistant_text_thread::text_thread_store] registering context server command: "web_search_help"
+2026-03-02T22:10:29-05:00 INFO  [assistant_text_thread::text_thread_store] registering context server command: "code_search_help"
+2026-03-02T22:10:29-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification window/logMessage:
+{
+  "type": 3,
+  "message": "ESLint server running in node v22.16.0"
+}
+2026-03-02T22:10:29-05:00 INFO  [lsp] starting language server process. binary path: "/Users/Home/Library/Application Support/Zed/extensions/work/color-highlight/color-lsp-v0.3.0/color-lsp", working directory: "/Users/Home/Development/Business/opine", args: []
+2026-03-02T22:10:29-05:00 WARN  [project::lsp_store] language server 3: failed to unregister workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files. not registered.
+2026-03-02T22:10:30-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-03-02T22:10:30-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-03-02T22:10:30-05:00 WARN  [project::lsp_store] language server 3: failed to unregister workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files. not registered.
+2026-03-02T22:10:30-05:00 INFO  [lsp] starting language server process. binary path: "/Users/Home/.nvm/versions/node/v22.16.0/bin/node", working directory: "/Users/Home/Development/Business/opine", args: ["/Users/Home/Library/Application Support/Zed/languages/tailwindcss-language-server/node_modules/.bin/tailwindcss-language-server", "--stdio"]
+2026-03-02T22:10:31-05:00 INFO  [lsp] starting language server process. binary path: "/Users/Home/.nvm/versions/node/v22.16.0/bin/node", working directory: "/Users/Home/Development/Business/opine", args: ["/Users/Home/Library/Application Support/Zed/languages/vtsls/node_modules/@vtsls/language-server/bin/vtsls.js", "--stdio"]
+2026-03-02T22:10:34-05:00 ERROR [crates/edit_prediction/src/edit_prediction.rs:1782] error decoding response body
+
+Caused by:
+    0: error reading a body from connection
+    1: unexpected EOF during chunk size line
+2026-03-02T22:10:35-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 4835
+}
+2026-03-02T22:10:35-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 76
+}
+2026-03-02T22:10:35-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 61
+}
+2026-03-02T22:10:35-05:00 INFO  [lsp] starting language server process. binary path: "/Users/Home/.local/bin/npm-package-json-checker-lsp", working directory: "/Users/Home/Development/Business/opine", args: []
+2026-03-02T22:10:36-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-03-02T22:10:36-05:00 WARN  [project::lsp_store] language server 3: failed to unregister workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files. not registered.
+2026-03-02T22:10:36-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 100
+}
+2026-03-02T22:10:36-05:00 INFO  [lsp] starting language server process. binary path: "/Users/Home/Library/Application Support/Zed/languages/package-version-server/package-version-server-v0.0.10", working directory: "/Users/Home/Development/Business/opine", args: []
+2026-03-02T22:10:36-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 123
+}
+2026-03-02T22:10:36-05:00 INFO  [lsp] starting language server process. binary path: "/Users/Home/.nvm/versions/node/v22.16.0/bin/node", working directory: "/Users/Home/Development/Business/opine", args: ["/Users/Home/Library/Application Support/Zed/languages/json-language-server/node_modules/vscode-langservers-extracted/bin/vscode-json-language-server", "--stdio"]
+2026-03-02T22:10:42-05:00 ERROR [crates/edit_prediction/src/edit_prediction.rs:1782] error decoding response body
+
+Caused by:
+    0: error reading a body from connection
+    1: unexpected EOF during chunk size line
+2026-03-02T22:10:53-05:00 WARN  [project::lsp_store] Get completion via package-version-server failed: Internal error
+2026-03-02T22:11:01-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-03-02T22:11:03-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-03-02T22:11:52-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-03-02T22:11:52-05:00 WARN  [project::lsp_store] language server 3: failed to unregister workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files. not registered.
+2026-03-02T22:11:52-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-03-02T22:11:52-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 131
+}
+2026-03-02T22:11:52-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 195
+}
+2026-03-02T22:11:52-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 85
+}
+2026-03-02T22:12:34-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-03-02T22:13:21-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-03-02T22:14:07-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-03-02T22:23:32-05:00 INFO  [project::prettier_store] Prettier config file "package.json" changed, reloading prettier instances for worktree 1
+2026-03-02T22:41:25-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 937
+}
+2026-03-02T22:41:28-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 708
+}
+2026-03-02T22:41:31-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 279
+}
+2026-03-02T22:41:32-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 423
+}
+2026-03-02T22:55:25-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 731
+}
+2026-03-02T23:10:02-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-02T23:10:06-05:00 INFO  [auto_update] downloaded update. path:"/var/folders/kb/kgt3jnd92qs3pcphn7cxc2880000gn/T/zed-auto-updateClGbwd/Zed.dmg"
+2026-03-02T23:10:23-05:00 INFO  [auto_update] Successfully unmounted the disk image
+2026-03-02T23:15:12-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-03-02T23:15:12-05:00 WARN  [project::lsp_store] language server 3: failed to unregister workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files. not registered.
+2026-03-02T23:15:12-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-03-02T23:15:12-05:00 WARN  [project::lsp_store] language server 3: failed to unregister workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files. not registered.
+2026-03-02T23:15:12-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-03-02T23:15:12-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-03-02T23:15:12-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-03-02T23:15:12-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-03-02T23:15:13-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-03-02T23:15:13-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-03-02T23:15:13-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 253
+}
+2026-03-02T23:15:13-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 718
+}
+2026-03-02T23:15:13-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 1072
+}
+2026-03-02T23:15:14-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 173
+}
+2026-03-02T23:15:14-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 218
+}
+2026-03-02T23:15:14-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 260
+}
+2026-03-02T23:15:14-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 63
+}
+2026-03-02T23:15:14-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 61
+}
+2026-03-02T23:15:14-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 109
+}
+2026-03-02T23:15:14-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 194
+}
+2026-03-03T00:10:02-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T01:10:02-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T02:10:02-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T03:10:02-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T04:10:02-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T05:10:02-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T06:10:02-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T07:10:02-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T08:10:02-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T09:07:18-05:00 INFO  [zed::reliability] hang detected, trace file saved at: /Users/Home/Library/Application Support/Zed/hang_traces/hang-2026-03-03_09-06-49.miniprof
+2026-03-03T09:10:02-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T10:10:02-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T11:10:02-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T12:10:02-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T13:10:02-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T14:10:02-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T15:10:03-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T16:10:03-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T16:10:48-05:00 INFO  [project::lsp_store] language server 3: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-03-03T16:10:48-05:00 WARN  [project::lsp_store] language server 3: failed to unregister workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files. not registered.
+2026-03-03T16:10:49-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 560
+}
+2026-03-03T16:10:49-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 596
+}
+2026-03-03T17:10:03-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T17:56:14-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 967
+}
+2026-03-03T18:10:03-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T19:10:03-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T20:10:03-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T20:10:07-05:00 INFO  [auto_update] downloaded update. path:"/var/folders/kb/kgt3jnd92qs3pcphn7cxc2880000gn/T/zed-auto-updatepE7ae5/Zed.dmg"
+2026-03-03T20:10:27-05:00 INFO  [auto_update] Successfully unmounted the disk image
+2026-03-03T21:04:37-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphSearchFeaturette.tsx",
+  "state": 1,
+  "validationTime": 806
+}
+2026-03-03T21:04:53-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphSearchFeaturette.tsx",
+  "state": 1,
+  "validationTime": 14
+}
+2026-03-03T21:04:54-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphSearchFeaturette.tsx",
+  "state": 1,
+  "validationTime": 163
+}
+2026-03-03T21:04:57-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphSearchFeaturette.tsx",
+  "state": 1,
+  "validationTime": 109
+}
+2026-03-03T21:04:57-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphSearchFeaturette.tsx",
+  "state": 1,
+  "validationTime": 108
+}
+2026-03-03T21:05:04-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphSearchFeaturette.tsx",
+  "state": 1,
+  "validationTime": 101
+}
+2026-03-03T21:05:05-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphSearchFeaturette.tsx",
+  "state": 1,
+  "validationTime": 148
+}
+2026-03-03T21:05:06-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphSearchFeaturette.tsx",
+  "state": 1,
+  "validationTime": 145
+}
+2026-03-03T21:05:09-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphSearchFeaturette.tsx",
+  "state": 1,
+  "validationTime": 222
+}
+2026-03-03T21:05:09-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphSearchFeaturette.tsx",
+  "state": 1,
+  "validationTime": 171
+}
+2026-03-03T21:05:14-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphSearchFeaturette.tsx",
+  "state": 1,
+  "validationTime": 169
+}
+2026-03-03T21:05:14-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphSearchFeaturette.tsx",
+  "state": 1,
+  "validationTime": 92
+}
+2026-03-03T21:06:29-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphSearchFeaturette.tsx",
+  "state": 1,
+  "validationTime": 356
+}
+2026-03-03T21:10:03-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-03T21:19:59-05:00 INFO  [lsp] Language server with id 2 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/models/profile.schema.ts",
+  "state": 1,
+  "validationTime": 734
+}
+2026-03-04T14:19:29-05:00 INFO  [zed] ========== starting zed version 0.225.13+stable.193.fefa719272ae88d310bd645b67e8864789fb68ea, sha fefa719 ==========
+2026-03-04T14:19:30-05:00 INFO  [crashes] spawning crash handler process
+2026-03-04T14:19:30-05:00 INFO  [zed] Using git binary path: "/Applications/Zed.app/Contents/MacOS/git"
+2026-03-04T14:19:30-05:00 INFO  [crashes] connected to crash handler process after 100ms
+2026-03-04T14:19:30-05:00 INFO  [crashes] crash handler registered
+2026-03-04T14:19:30-05:00 INFO  [extension_host] extensions updated. loading 23, reloading 0, unloading 0
+2026-03-04T14:19:30-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-04T14:19:30-05:00 WARN  [theme] Theme "New Darcula" is using a deprecated style property: scrollbar_thumb.background. Use `scrollbar.thumb.background` instead.
+2026-03-04T14:19:30-05:00 WARN  [theme] Theme "Norrsken Svalbard" is using a deprecated style property: scrollbar_thumb.background. Use `scrollbar.thumb.background` instead.
+2026-03-04T14:19:30-05:00 WARN  [theme] Theme "Norrsken Kiruna" is using a deprecated style property: scrollbar_thumb.background. Use `scrollbar.thumb.background` instead.
+2026-03-04T14:19:30-05:00 WARN  [theme] Theme "Norrsken Reykjavík" is using a deprecated style property: scrollbar_thumb.background. Use `scrollbar.thumb.background` instead.
+2026-03-04T14:19:30-05:00 INFO  [workspace] Rendered first frame
+2026-03-04T14:19:30-05:00 INFO  [client] set status on client 0: Authenticating
+2026-03-04T14:19:31-05:00 INFO  [client] set status on client 124578: Authenticated
+2026-03-04T14:19:34-05:00 INFO  [util] set environment variables from shell:/bin/zsh, path:/Users/Home/.config/kaku/zsh/bin:/Users/Home/.opencode/bin:/Users/Home/.local/bin:/Users/Home/.antigravity/antigravity/bin:/Users/Home/.nvm/versions/node/v22.16.0/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/pmk/env/global/bin:/Library/Apple/usr/bin:/opt/zerobrew/prefix/bin:/Users/Home/.cargo/bin:/Users/Home/Library/Application Support/JetBrains/Toolbox/scripts:/Users/Home/Developer/flutter/bin:/Users/Home/.pub-cache/bin:/opt/homebrew/opt/jpeg/bin:/Users/Home/.codeium/windsurf/bin:/Users/Home/.cargo/bin:/Users/Home/.bun/bin:/opt/homebrew/opt/openjdk@17/bin:/Users/Home/Library/Android/sdk/platform-tools:/Users/Home/Library/Android/sdk/tools:/Users/Home/Library/Android/sdk/tools/bin:/Users/Home/Library/Android/sdk/emulator
+2026-03-04T14:19:34-05:00 ERROR [crates/git/src/repository.rs:860] Error { code: -3, klass: 6, message: "could not find repository at '/Users/Home/Development/Business/opine/.git-date-test'" }
+2026-03-04T14:19:34-05:00 ERROR [crates/project/src/git_store.rs:6045] opening repository at "/Users/Home/Development/Business/opine/.git-date-test/.git"
+2026-03-04T14:19:34-05:00 INFO  [node_runtime] using Node.js found on PATH: SystemNodeRuntime { node: "/Users/Home/.nvm/versions/node/v22.16.0/bin/node", npm: "/Users/Home/.nvm/versions/node/v22.16.0/bin/npm", global_node_modules: "/Users/Home/.nvm/versions/node/v22.16.0/lib/node_modules\n", scratch_dir: "/Users/Home/Library/Application Support/Zed/node" }
+2026-03-04T14:19:34-05:00 INFO  [lsp] starting language server process. binary path: "/Users/Home/.nvm/versions/node/v22.16.0/bin/node", working directory: "/Users/Home/Development/Business/opine", args: ["--max-old-space-size=8192", "/Users/Home/Library/Application Support/Zed/languages/eslint/vscode-eslint-2.4.4/vscode-eslint/server/out/eslintServer.js", "--stdio"]
+2026-03-04T14:19:34-05:00 INFO  [lsp] starting language server process. binary path: "/Users/Home/Library/Application Support/Zed/languages/package-version-server/package-version-server-v0.0.10", working directory: "/Users/Home/Development/Business/opine", args: []
+2026-03-04T14:19:35-05:00 INFO  [lsp] starting language server process. binary path: "/Users/Home/.local/bin/npm-package-json-checker-lsp", working directory: "/Users/Home/Development/Business/opine", args: []
+2026-03-04T14:19:35-05:00 INFO  [lsp] starting language server process. binary path: "/opt/homebrew/bin/biome", working directory: "/Users/Home/Development/Business/opine", args: ["lsp-proxy"]
+2026-03-04T14:19:35-05:00 INFO  [lsp] starting language server process. binary path: "/Users/Home/.nvm/versions/node/v22.16.0/bin/node", working directory: "/Users/Home/Development/Business/opine", args: ["/Users/Home/Development/Business/opine/node_modules/oxfmt/bin/oxfmt", "--lsp"]
+2026-03-04T14:19:35-05:00 INFO  [lsp] starting language server process. binary path: "/Users/Home/.nvm/versions/node/v22.16.0/bin/node", working directory: "/Users/Home/Development/Business/opine", args: ["/Users/Home/Library/Application Support/Zed/extensions/work/graphql/node_modules/graphql-language-service-cli/bin/graphql.js", "server", "-m", "stream", "-c", "/Users/Home/Development/Business/opine"]
+2026-03-04T14:19:35-05:00 INFO  [lsp] starting language server process. binary path: "/Users/Home/.nvm/versions/node/v22.16.0/bin/node", working directory: "/Users/Home/Development/Business/opine", args: ["/Users/Home/Development/Business/opine/node_modules/oxlint/bin/oxlint", "--lsp"]
+2026-03-04T14:19:35-05:00 INFO  [auto_update] downloaded update. path:"/var/folders/kb/kgt3jnd92qs3pcphn7cxc2880000gn/T/zed-auto-updateKbvBkx/Zed.dmg"
+2026-03-04T14:19:35-05:00 INFO  [lsp] starting language server process. binary path: "/Users/Home/.nvm/versions/node/v22.16.0/bin/node", working directory: "/Users/Home/Development/Business/opine", args: ["/Users/Home/Library/Application Support/Zed/languages/json-language-server/node_modules/vscode-langservers-extracted/bin/vscode-json-language-server", "--stdio"]
+2026-03-04T14:19:35-05:00 INFO  [lsp] starting language server process. binary path: "/Users/Home/Library/Application Support/Zed/extensions/work/color-highlight/color-lsp-v0.3.0/color-lsp", working directory: "/Users/Home/Development/Business/opine", args: []
+2026-03-04T14:19:35-05:00 WARN  [project::lsp_store] language server 5: failed to unregister workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files. not registered.
+2026-03-04T14:19:36-05:00 INFO  [lsp] starting language server process. binary path: "/Users/Home/.nvm/versions/node/v22.16.0/bin/node", working directory: "/Users/Home/Development/Business/opine", args: ["/Users/Home/Library/Application Support/Zed/languages/tailwindcss-language-server/node_modules/.bin/tailwindcss-language-server", "--stdio"]
+2026-03-04T14:19:36-05:00 INFO  [project::lsp_store] language server 5: unregistered workspace/DidChangeWatchedFiles capability with id biome_did_change_watched_files
+2026-03-04T14:19:37-05:00 INFO  [lsp] starting language server process. binary path: "/Users/Home/.nvm/versions/node/v22.16.0/bin/node", working directory: "/Users/Home/Development/Business/opine", args: ["/Users/Home/Library/Application Support/Zed/languages/vtsls/node_modules/@vtsls/language-server/bin/vtsls.js", "--stdio"]
+2026-03-04T14:19:38-05:00 ERROR [project::context_server_store] Failed to create context server configuration from settings: from extension "Firecrawl MCP Server" version 0.0.4: missing field `firecrawl_api_key`
+2026-03-04T14:19:40-05:00 INFO  [assistant_text_thread::text_thread_store] registering context server command: "web_search_help"
+2026-03-04T14:19:40-05:00 INFO  [assistant_text_thread::text_thread_store] registering context server command: "code_search_help"
+2026-03-04T14:19:42-05:00 INFO  [lsp] Language server with id 4 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphSearchFeaturette.tsx",
+  "state": 1,
+  "validationTime": 6781
+}
+2026-03-04T14:19:42-05:00 INFO  [lsp] Language server with id 4 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 6778
+}
+2026-03-04T14:19:42-05:00 INFO  [lsp] Language server with id 4 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/models/profile.schema.ts",
+  "state": 1,
+  "validationTime": 6776
+}
+2026-03-04T14:19:42-05:00 INFO  [lsp] Language server with id 4 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 83
+}
+2026-03-04T14:19:42-05:00 INFO  [lsp] Language server with id 4 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphSearchFeaturette.tsx",
+  "state": 1,
+  "validationTime": 222
+}
+2026-03-04T14:19:42-05:00 INFO  [lsp] Language server with id 4 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/models/profile.schema.ts",
+  "state": 1,
+  "validationTime": 22
+}
+2026-03-04T14:19:42-05:00 INFO  [lsp] Language server with id 4 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphSearchFeaturette.tsx",
+  "state": 1,
+  "validationTime": 144
+}
+2026-03-04T14:19:42-05:00 INFO  [lsp] Language server with id 4 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/views/main/HomePage/graph/GraphScene.tsx",
+  "state": 1,
+  "validationTime": 199
+}
+2026-03-04T14:19:42-05:00 INFO  [lsp] Language server with id 4 sent unhandled notification eslint/status:
+{
+  "uri": "file:///Users/Home/Development/Business/opine/models/profile.schema.ts",
+  "state": 1,
+  "validationTime": 219
+}
+2026-03-04T14:19:55-05:00 INFO  [auto_update] Successfully unmounted the disk image
+2026-03-04T15:19:30-05:00 INFO  [auto_update] Auto Update: checking for updates
+2026-03-04T18:22:33-05:00 ERROR [gpui::app] timed out waiting on app_will_quit

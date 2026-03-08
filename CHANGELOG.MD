@@ -6,20 +6,14 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
-- Added fallback current-track quick-fix actions that offer the 3 most recent release targets between the installed version and the track head.
-- Added release-age context to fallback quick-fix labels using `DD/MM/YYYY (x time ago)`.
+- User-configurable LSP settings via Zed `settings.json` (`lsp.npm-package-json-checker-lsp.settings`) for registry URL, cache TTL, concurrency, timeout, fallback release action count, date tag mode/format, and experimental-track hint visibility.
 
 ### Changed
 
-- Standardized release-date formatting to `DD/MM/YYYY (x time ago)` across diagnostics, track-switch actions, and hover track details.
-- Fixed hover track rendering so the current/latest track now shows release date and relative age when available.
-- Changelog sections now append release date + age per entry when npm publish timestamps can be resolved for the version.
-- Track fallback selection now respects channel family for prerelease tracks (for example beta-only fallbacks on beta tracks).
-- Updated the preferred quick-fix title for the `latest` track from `"{TYPE}: Update {package} to X.X.X (latest)"` to `"{TYPE}: Update {package} to latest X.X.X ({time ago})"`.
-- Added `current_track_release_date` to version-status data so code actions and diagnostics can show release-age text for the active track (including `latest`) reliably.
-- Reduced inline hint noise to keep update hints more minimal.
-- Improved prerelease handling so experimental/canary-style signals are hidden unless the dependency is already on that track.
-- Refined track-aware messaging and update surfaces in the LSP (including parser/registry/lsp coordination updates).
+- Settings are now reliably applied on startup by forwarding Zed LSP settings from the extension host to the server process.
+- Date display is now consistently configurable across code actions, hover track metadata, and changelog headers.
+- Current-track fallback quick-fix actions are configurable (default `2`, `0` disables fallback targets).
+- Experimental-track inline diagnostics are now concise (for example `CANARY → x.y.z, BETA → x.y.z`).
 
 ## [1.0.4] - 2026-02-08
 
