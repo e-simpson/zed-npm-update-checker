@@ -18,6 +18,7 @@
     - Shows changes from current to latest if possible
     - Goes direct without API calls with rate limits    
 - 🔧 Offers auto-complete to update the package
+    - Includes 3 fallback update targets from the current track (older than latest, newer than current)
 - 📚 Distinguishes between release tracks (major/minor/patch/canary/nightly/beta/alpha/experimental)
 
 ### Loading Indicator

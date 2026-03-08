@@ -14,6 +14,7 @@ const NPM_REGISTRY_URL: &str = "https://registry.npmjs.org";
 const CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 const MAX_CONCURRENT_REQUESTS: usize = 10;
 const MAX_CHANGELOG_VERSIONS: usize = 15;
+const MAX_CURRENT_TRACK_FALLBACK_RELEASES: usize = 3;
 
 lazy_static! {
     /// Regex to extract version numbers from changelog headers
@@ -24,6 +25,10 @@ lazy_static! {
     /// - "# 1.0.0"
     static ref VERSION_HEADER_REGEX: Regex = Regex::new(
         r"(?i)^#{1,2}\s*\[?v?(\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+[\w.]+)?)\]?"
+    ).unwrap();
+    /// Regex to detect existing date text in changelog headers
+    static ref HEADER_DATE_REGEX: Regex = Regex::new(
+        r"(?ix)\b\d{4}-\d{1,2}-\d{1,2}\b|\b\d{1,2}/\d{1,2}/\d{4}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,\s*|\s+)\d{4}\b"
     ).unwrap();
 
     /// Regex to extract standard semver from git tags
@@ -153,6 +158,13 @@ pub struct TrackUpdate {
     pub is_newer: bool,
 }
 
+/// Release metadata for a specific version
+#[derive(Debug, Clone, PartialEq)]
+pub struct VersionRelease {
+    pub version: String,
+    pub release_date: DateTime<Utc>,
+}
+
 /// Result of comparing current version to latest
 #[derive(Debug, Clone, PartialEq)]
 pub enum VersionStatus {
@@ -162,6 +174,8 @@ pub enum VersionStatus {
     UpToDate {
         current_track: String,
         current_version: String,
+        current_track_release_date: Option<DateTime<Utc>>,
+        recent_current_track_releases: Vec<VersionRelease>,
         other_tracks: Vec<TrackUpdate>,
         changelog: Option<String>,
         repository_url: Option<String>,
@@ -170,6 +184,8 @@ pub enum VersionStatus {
     UpdateAvailable {
         current_track: String,
         current_version: String,
+        current_track_release_date: Option<DateTime<Utc>>,
+        recent_current_track_releases: Vec<VersionRelease>,
         latest_on_track: String,
         other_tracks: Vec<TrackUpdate>,
         severity: UpdateSeverity,
@@ -180,6 +196,8 @@ pub enum VersionStatus {
     Unknown {
         current_track: String,
         current_version: String,
+        current_track_release_date: Option<DateTime<Utc>>,
+        recent_current_track_releases: Vec<VersionRelease>,
         other_tracks: Vec<TrackUpdate>,
         changelog: Option<String>,
         repository_url: Option<String>,
@@ -192,6 +210,7 @@ struct ChangelogEntry {
     version: Version,
     version_string: String,
     body: String,
+    release_date: Option<DateTime<Utc>>,
 }
 
 /// Cache key includes both package name and current version for changelog relevance
@@ -228,6 +247,8 @@ pub struct PackageVersionInfo {
     pub current_track: String,
     pub current_version: String,
     pub latest_on_track: String,
+    pub version_publish_dates: HashMap<String, DateTime<Utc>>,
+    pub recent_current_track_releases: Vec<VersionRelease>,
     pub all_tracks: Vec<TrackInfo>,
     pub repository_url: Option<String>,
     pub repository_directory: Option<String>,
@@ -355,8 +376,15 @@ impl NpmRegistry {
         let dist_tags = data.dist_tags?;
         let current_track = detect_track(current_version, &dist_tags);
         let latest_on_track = get_version_for_track(&dist_tags, &current_track)?;
+        let version_publish_dates = parse_version_publish_dates(data.time.as_ref());
+        let recent_current_track_releases = build_recent_current_track_releases(
+            &current_track,
+            current_version,
+            &latest_on_track,
+            &version_publish_dates,
+        );
 
-        let all_tracks = build_track_info(&dist_tags, data.time.as_ref());
+        let all_tracks = build_track_info(&dist_tags, Some(&version_publish_dates));
 
         let repo_url = data.repository.as_ref().and_then(|r| r.get_url());
         let repo_directory = data.repository.as_ref().and_then(|r| r.get_directory());
@@ -366,6 +394,8 @@ impl NpmRegistry {
             current_track,
             current_version: current_version.to_string(),
             latest_on_track,
+            version_publish_dates,
+            recent_current_track_releases,
             all_tracks,
             repository_url: repo_url,
             repository_directory: repo_directory,
@@ -387,6 +417,7 @@ impl NpmRegistry {
         latest_version: &str,
         repo_url: &str,
         repo_directory: Option<&str>,
+        version_publish_dates: Option<&HashMap<String, DateTime<Utc>>>,
     ) -> Option<String> {
         let cache_key = CacheKey {
             package_name: package_name.to_string(),
@@ -402,7 +433,13 @@ impl NpmRegistry {
 
         // Fetch changelog from GitHub
         let changelog = self
-            .fetch_changelog(repo_url, repo_directory, current_version, latest_version)
+            .fetch_changelog(
+                repo_url,
+                repo_directory,
+                current_version,
+                latest_version,
+                version_publish_dates,
+            )
             .await;
 
         // Update full cache with changelog
@@ -477,8 +514,9 @@ impl NpmRegistry {
         let dist_tags = data.dist_tags?;
         let current_track = detect_track(current_version, &dist_tags);
         let latest_on_track = get_version_for_track(&dist_tags, &current_track)?;
+        let version_publish_dates = parse_version_publish_dates(data.time.as_ref());
 
-        let all_tracks = build_track_info(&dist_tags, data.time.as_ref());
+        let all_tracks = build_track_info(&dist_tags, Some(&version_publish_dates));
 
         let repo_url = data.repository.as_ref().and_then(|r| r.get_url());
         let repo_directory = data.repository.as_ref().and_then(|r| r.get_directory());
@@ -490,6 +528,7 @@ impl NpmRegistry {
                 repo_directory.as_deref(),
                 current_version,
                 &latest_on_track,
+                Some(&version_publish_dates),
             )
             .await
         } else {
@@ -521,6 +560,7 @@ impl NpmRegistry {
         directory: Option<&str>,
         current_version: &str,
         latest_version: &str,
+        version_publish_dates: Option<&HashMap<String, DateTime<Utc>>>,
     ) -> Option<String> {
         let (owner, repo) = match parse_github_url(repo_url) {
             Some(parsed) => parsed,
@@ -537,16 +577,36 @@ impl NpmRegistry {
 
         // Try package-specific changelog first if in monorepo
         let monorepo_changelog = if let Some(dir) = directory {
-            self.fetch_monorepo_changelog(&owner, &repo, dir, current_version, latest_version)
-                .await
+            self.fetch_monorepo_changelog(
+                &owner,
+                &repo,
+                dir,
+                current_version,
+                latest_version,
+                version_publish_dates,
+            )
+            .await
         } else {
             None
         };
 
         // Fetch root changelog as fallback
         let (releases_result, root_changelog_result) = tokio::join!(
-            self.fetch_github_releases(&owner, &repo, current_version, latest_version, directory),
-            self.fetch_changelog_file(&owner, &repo, current_version, latest_version)
+            self.fetch_github_releases(
+                &owner,
+                &repo,
+                current_version,
+                latest_version,
+                directory,
+                version_publish_dates
+            ),
+            self.fetch_changelog_file(
+                &owner,
+                &repo,
+                current_version,
+                latest_version,
+                version_publish_dates
+            )
         );
 
         debug!(
@@ -590,6 +650,7 @@ impl NpmRegistry {
         directory: &str,
         current_version: &str,
         latest_version: &str,
+        version_publish_dates: Option<&HashMap<String, DateTime<Utc>>>,
     ) -> Option<String> {
         let files = ["CHANGELOG.md", "changelog.md", "HISTORY.md", "CHANGES.md"];
         let branches = ["main", "master"];
@@ -620,6 +681,7 @@ impl NpmRegistry {
                                 &content,
                                 current_version,
                                 latest_version,
+                                version_publish_dates,
                             );
                             if !entries.is_empty() {
                                 debug!("Found monorepo changelog at {}", url);
@@ -640,6 +702,7 @@ impl NpmRegistry {
                 current_version,
                 latest_version,
                 package_name,
+                version_publish_dates,
             )
             .await;
 
@@ -658,6 +721,7 @@ impl NpmRegistry {
         current_version: &str,
         latest_version: &str,
         package_prefix: &str,
+        version_publish_dates: Option<&HashMap<String, DateTime<Utc>>>,
     ) -> Vec<ChangelogEntry> {
         let current_semver = Version::parse(current_version).ok();
         let latest_semver = Version::parse(latest_version).ok();
@@ -702,6 +766,10 @@ impl NpmRegistry {
                     {
                         if version > *current && version <= *latest {
                             entries.push(ChangelogEntry {
+                                release_date: release_date_for_version(
+                                    &version,
+                                    version_publish_dates,
+                                ),
                                 version,
                                 version_string: title.to_string(),
                                 body,
@@ -710,6 +778,7 @@ impl NpmRegistry {
                     }
                 } else {
                     entries.push(ChangelogEntry {
+                        release_date: release_date_for_version(&version, version_publish_dates),
                         version,
                         version_string: title.to_string(),
                         body,
@@ -734,6 +803,7 @@ impl NpmRegistry {
         current_version: &str,
         latest_version: &str,
         _directory: Option<&str>,
+        version_publish_dates: Option<&HashMap<String, DateTime<Utc>>>,
     ) -> Vec<ChangelogEntry> {
         // Try to parse current and latest versions (may fail for non-semver like r182)
         let current_semver = Version::parse(current_version).ok();
@@ -802,6 +872,9 @@ impl NpmRegistry {
                     .clone()
                     .unwrap_or_else(|| Version::new(0, 0, 0));
                 fallback_entries.push(ChangelogEntry {
+                    release_date: parsed_version
+                        .as_ref()
+                        .and_then(|v| release_date_for_version(v, version_publish_dates)),
                     version,
                     version_string: title.to_string(),
                     body: body.clone(),
@@ -816,6 +889,7 @@ impl NpmRegistry {
                     // Filter: current <= version <= latest (include current version)
                     if version >= current && version <= latest {
                         entries.push(ChangelogEntry {
+                            release_date: release_date_for_version(version, version_publish_dates),
                             version: version.clone(),
                             version_string: title.to_string(),
                             body,
@@ -864,6 +938,7 @@ impl NpmRegistry {
         repo: &str,
         current_version: &str,
         latest_version: &str,
+        version_publish_dates: Option<&HashMap<String, DateTime<Utc>>>,
     ) -> Vec<ChangelogEntry> {
         // Try common changelog file names
         let files = ["CHANGELOG.md", "changelog.md", "HISTORY.md", "CHANGES.md"];
@@ -883,6 +958,7 @@ impl NpmRegistry {
                                 &content,
                                 current_version,
                                 latest_version,
+                                version_publish_dates,
                             );
                             if !entries.is_empty() {
                                 return entries;
@@ -932,13 +1008,16 @@ fn detect_track(current_version: &str, dist_tags: &DistTags) -> String {
         // check if the version pattern matches any track's version pattern
         // e.g., 55.0.0-beta.1 should match next: 55.0.0-beta.3
         if let Ok(current_ver) = Version::parse(current_version) {
+            let current_channel = prerelease_channel(current_version);
             for (tag, track_version) in &dist_tags.other_tags {
                 if let Ok(track_ver) = Version::parse(track_version) {
+                    let track_channel = prerelease_channel(track_version);
                     // Check if major.minor.patch match and both have prerelease
                     if current_ver.major == track_ver.major
                         && current_ver.minor == track_ver.minor
                         && current_ver.patch == track_ver.patch
                         && track_ver.pre.is_empty() == current_ver.pre.is_empty()
+                        && track_channel == current_channel
                     {
                         return tag.clone();
                     }
@@ -963,17 +1042,13 @@ fn get_version_for_track(dist_tags: &DistTags, track: &str) -> Option<String> {
 /// Build track info from dist-tags and release times
 fn build_track_info(
     dist_tags: &DistTags,
-    time_data: Option<&HashMap<String, String>>,
+    time_data: Option<&HashMap<String, DateTime<Utc>>>,
 ) -> Vec<TrackInfo> {
     let mut tracks = Vec::new();
 
     // Add latest first
     if let Some(ref version) = dist_tags.latest {
-        let release_date = time_data.and_then(|t| {
-            t.get(version)
-                .and_then(|d| DateTime::parse_from_rfc3339(d).ok())
-                .map(|dt| dt.with_timezone(&Utc))
-        });
+        let release_date = time_data.and_then(|t| t.get(version).copied());
 
         tracks.push(TrackInfo {
             name: "latest".to_string(),
@@ -984,11 +1059,7 @@ fn build_track_info(
 
     // Add other tags
     for (name, version) in &dist_tags.other_tags {
-        let release_date = time_data.and_then(|t| {
-            t.get(version)
-                .and_then(|d| DateTime::parse_from_rfc3339(d).ok())
-                .map(|dt| dt.with_timezone(&Utc))
-        });
+        let release_date = time_data.and_then(|t| t.get(version).copied());
 
         tracks.push(TrackInfo {
             name: name.clone(),
@@ -1016,6 +1087,95 @@ fn build_track_info(
     });
 
     tracks
+}
+
+/// Parse npm version publish times into a semver-only map
+fn parse_version_publish_dates(
+    time_data: Option<&HashMap<String, String>>,
+) -> HashMap<String, DateTime<Utc>> {
+    let mut publish_dates = HashMap::new();
+
+    if let Some(time_map) = time_data {
+        for (version, date_str) in time_map {
+            if Version::parse(version).is_err() {
+                continue;
+            }
+
+            if let Ok(date) = DateTime::parse_from_rfc3339(date_str) {
+                publish_dates.insert(version.clone(), date.with_timezone(&Utc));
+            }
+        }
+    }
+
+    publish_dates
+}
+
+fn release_date_for_version(
+    version: &Version,
+    version_publish_dates: Option<&HashMap<String, DateTime<Utc>>>,
+) -> Option<DateTime<Utc>> {
+    version_publish_dates
+        .and_then(|map| map.get(&version.to_string()))
+        .copied()
+}
+
+/// Build fallback release targets on the current track (newer than current, older than latest)
+fn build_recent_current_track_releases(
+    current_track: &str,
+    current_version: &str,
+    latest_on_track: &str,
+    version_publish_dates: &HashMap<String, DateTime<Utc>>,
+) -> Vec<VersionRelease> {
+    let current_semver = match Version::parse(current_version) {
+        Ok(v) => v,
+        Err(_) => return vec![],
+    };
+
+    let latest_semver = match Version::parse(latest_on_track) {
+        Ok(v) => v,
+        Err(_) => return vec![],
+    };
+
+    let track_channel = prerelease_channel(latest_on_track);
+
+    let mut releases: Vec<(Version, VersionRelease)> = version_publish_dates
+        .iter()
+        .filter_map(|(version_string, release_date)| {
+            let parsed = Version::parse(version_string).ok()?;
+
+            let is_on_current_track = if current_track == "latest" {
+                parsed.pre.is_empty()
+            } else if let Some(ref channel) = track_channel {
+                prerelease_channel(version_string).as_deref() == Some(channel.as_str())
+            } else {
+                parsed.pre.is_empty()
+            };
+
+            if !is_on_current_track || parsed <= current_semver || parsed >= latest_semver {
+                return None;
+            }
+
+            Some((
+                parsed,
+                VersionRelease {
+                    version: version_string.clone(),
+                    release_date: *release_date,
+                },
+            ))
+        })
+        .collect();
+
+    releases.sort_by(|a, b| {
+        b.1.release_date
+            .cmp(&a.1.release_date)
+            .then_with(|| b.0.cmp(&a.0))
+    });
+
+    releases
+        .into_iter()
+        .map(|(_, release)| release)
+        .take(MAX_CURRENT_TRACK_FALLBACK_RELEASES)
+        .collect()
 }
 
 /// Format time ago string
@@ -1055,22 +1215,9 @@ pub fn format_time_ago(date: DateTime<Utc>) -> String {
     }
 }
 
-/// Format exact date for older releases
-pub fn format_exact_date(date: DateTime<Utc>) -> String {
-    date.format("%b %d, %Y").to_string()
-}
-
 /// Format date with time ago for display
 pub fn format_date_with_ago(date: DateTime<Utc>) -> String {
-    let now = Utc::now();
-    let duration = now.signed_duration_since(date);
-
-    if duration.num_days() > 90 {
-        // Older than 3 months, show exact date
-        format_exact_date(date)
-    } else {
-        format_time_ago(date)
-    }
+    format!("{}, {}", date.format("%d/%m/%Y"), format_time_ago(date))
 }
 
 /// Convert HTML content from atom feed to readable text
@@ -1232,6 +1379,7 @@ fn extract_changelog_sections_since_version(
     content: &str,
     current_version: &str,
     latest_version: &str,
+    version_publish_dates: Option<&HashMap<String, DateTime<Utc>>>,
 ) -> Vec<ChangelogEntry> {
     // Try to parse versions for filtering
     let current_semver = Version::parse(current_version).ok();
@@ -1253,6 +1401,9 @@ fn extract_changelog_sections_since_version(
                     if fallback_entries.len() < MAX_CHANGELOG_VERSIONS {
                         let version = version_opt.clone().unwrap_or_else(|| Version::new(0, 0, 0));
                         fallback_entries.push(ChangelogEntry {
+                            release_date: version_opt
+                                .as_ref()
+                                .and_then(|v| release_date_for_version(v, version_publish_dates)),
                             version,
                             version_string: header.clone(),
                             body: body.clone(),
@@ -1267,6 +1418,10 @@ fn extract_changelog_sections_since_version(
                             // Include current version too: current <= version <= latest
                             if version >= current && version <= latest {
                                 entries.push(ChangelogEntry {
+                                    release_date: release_date_for_version(
+                                        version,
+                                        version_publish_dates,
+                                    ),
                                     version: version.clone(),
                                     version_string: header,
                                     body,
@@ -1299,6 +1454,9 @@ fn extract_changelog_sections_since_version(
             if fallback_entries.len() < MAX_CHANGELOG_VERSIONS {
                 let version = version_opt.clone().unwrap_or_else(|| Version::new(0, 0, 0));
                 fallback_entries.push(ChangelogEntry {
+                    release_date: version_opt
+                        .as_ref()
+                        .and_then(|v| release_date_for_version(v, version_publish_dates)),
                     version,
                     version_string: header.clone(),
                     body: body.clone(),
@@ -1315,6 +1473,7 @@ fn extract_changelog_sections_since_version(
                         && entries.len() < MAX_CHANGELOG_VERSIONS
                     {
                         entries.push(ChangelogEntry {
+                            release_date: release_date_for_version(version, version_publish_dates),
                             version: version.clone(),
                             version_string: header,
                             body,
@@ -1342,13 +1501,7 @@ fn format_changelog_entries(entries: Vec<ChangelogEntry>) -> String {
     let mut output = Vec::new();
 
     for entry in entries {
-        let header = if entry.version_string.starts_with('#') {
-            entry.version_string.clone()
-        } else {
-            format!("## {}", entry.version_string)
-        };
-
-        output.push(header);
+        output.push(format_changelog_header(&entry));
 
         let body = entry.body.trim();
         if !body.is_empty() {
@@ -1359,6 +1512,69 @@ fn format_changelog_entries(entries: Vec<ChangelogEntry>) -> String {
     }
 
     output.join("\n").trim().to_string()
+}
+
+fn format_changelog_header(entry: &ChangelogEntry) -> String {
+    let base = if entry.version_string.starts_with('#') {
+        entry.version_string.clone()
+    } else {
+        format!("## {}", entry.version_string)
+    };
+
+    if let Some(date) = entry.release_date {
+        let normalized = remove_existing_date_from_header(&base);
+        format!("{} ({})", normalized, format_date_with_ago(date))
+    } else {
+        base
+    }
+}
+
+fn remove_existing_date_from_header(header: &str) -> String {
+    let Some(date_match) = HEADER_DATE_REGEX.find(header) else {
+        return header.to_string();
+    };
+
+    let mut remove_start = date_match.start();
+    let mut remove_end = date_match.end();
+
+    // If the date is inside (...) remove the whole parenthesized segment.
+    if let Some(open_idx) = header[..date_match.start()].rfind('(') {
+        if let Some(close_rel) = header[date_match.end()..].find(')') {
+            let close_idx = date_match.end() + close_rel;
+            remove_start = open_idx;
+            remove_end = close_idx + 1;
+        }
+    }
+
+    // Also trim surrounding separators like " - 2026-02-14".
+    while remove_start > 0 {
+        let prev_char = header[..remove_start].chars().last().unwrap();
+        if prev_char.is_whitespace() || matches!(prev_char, '-' | '–' | '—' | ':' | ',') {
+            remove_start -= prev_char.len_utf8();
+        } else {
+            break;
+        }
+    }
+
+    while remove_end < header.len() {
+        let next_char = header[remove_end..].chars().next().unwrap();
+        if next_char.is_whitespace() {
+            remove_end += next_char.len_utf8();
+        } else {
+            break;
+        }
+    }
+
+    let left = header[..remove_start].trim_end();
+    let right = header[remove_end..].trim_start();
+
+    if left.is_empty() {
+        right.to_string()
+    } else if right.is_empty() {
+        left.to_string()
+    } else {
+        format!("{} {}", left, right)
+    }
 }
 
 /// Merge changelogs from GitHub releases and CHANGELOG.md file
@@ -1397,14 +1613,7 @@ fn merge_changelogs(
     let mut output = Vec::new();
 
     for entry in &entries {
-        // Add version header
-        let header = if entry.version_string.starts_with('#') {
-            entry.version_string.clone()
-        } else {
-            format!("## {}", entry.version_string)
-        };
-
-        output.push(header);
+        output.push(format_changelog_header(entry));
 
         // Add body (trimmed)
         let body = entry.body.trim();
@@ -1468,15 +1677,23 @@ pub fn check_version_status(
     latest_on_track: &str,
     current_track: &str,
     all_tracks: &[TrackInfo],
+    recent_current_track_releases: &[VersionRelease],
     changelog: Option<String>,
     repository_url: Option<String>,
 ) -> VersionStatus {
+    let current_track_release_date = all_tracks
+        .iter()
+        .find(|t| t.name == current_track)
+        .and_then(|t| t.release_date);
+
     let current_parsed = match Version::parse(current_version) {
         Ok(v) => v,
         Err(_) => {
             return VersionStatus::Unknown {
                 current_track: current_track.to_string(),
                 current_version: current_version.to_string(),
+                current_track_release_date,
+                recent_current_track_releases: recent_current_track_releases.to_vec(),
                 other_tracks: build_other_tracks(current_track, current_version, all_tracks),
                 changelog,
                 repository_url,
@@ -1490,6 +1707,8 @@ pub fn check_version_status(
             return VersionStatus::Unknown {
                 current_track: current_track.to_string(),
                 current_version: current_version.to_string(),
+                current_track_release_date,
+                recent_current_track_releases: recent_current_track_releases.to_vec(),
                 other_tracks: build_other_tracks(current_track, current_version, all_tracks),
                 changelog,
                 repository_url,
@@ -1506,6 +1725,8 @@ pub fn check_version_status(
         return VersionStatus::UpToDate {
             current_track: current_track.to_string(),
             current_version: current_version.to_string(),
+            current_track_release_date,
+            recent_current_track_releases: recent_current_track_releases.to_vec(),
             other_tracks,
             changelog,
             repository_url,
@@ -1523,6 +1744,8 @@ pub fn check_version_status(
     VersionStatus::UpdateAvailable {
         current_track: current_track.to_string(),
         current_version: current_version.to_string(),
+        current_track_release_date,
+        recent_current_track_releases: recent_current_track_releases.to_vec(),
         latest_on_track: latest_on_track.to_string(),
         other_tracks,
         severity,
@@ -1534,6 +1757,12 @@ pub fn check_version_status(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn utc_date(input: &str) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(input)
+            .unwrap()
+            .with_timezone(&Utc)
+    }
 
     #[test]
     fn test_detect_track() {
@@ -1603,6 +1832,110 @@ mod tests {
     }
 
     #[test]
+    fn test_format_date_with_ago_uses_compact_date() {
+        let formatted = format_date_with_ago(utc_date("2024-01-15T00:00:00Z"));
+        assert!(formatted.starts_with("15/01/2024, "));
+        assert!(formatted.contains("ago"));
+    }
+
+    #[test]
+    fn test_build_recent_current_track_releases_latest_track() {
+        let release_dates = HashMap::from([
+            ("1.0.1".to_string(), utc_date("2026-01-01T00:00:00Z")),
+            ("1.0.2".to_string(), utc_date("2026-01-02T00:00:00Z")),
+            ("1.0.3".to_string(), utc_date("2026-01-03T00:00:00Z")),
+            ("1.0.4".to_string(), utc_date("2026-01-04T00:00:00Z")),
+            ("1.1.0-beta.1".to_string(), utc_date("2026-01-05T00:00:00Z")),
+        ]);
+
+        let releases =
+            build_recent_current_track_releases("latest", "1.0.0", "1.0.4", &release_dates);
+
+        assert_eq!(releases.len(), 3);
+        assert_eq!(releases[0].version, "1.0.3");
+        assert_eq!(releases[1].version, "1.0.2");
+        assert_eq!(releases[2].version, "1.0.1");
+    }
+
+    #[test]
+    fn test_build_recent_current_track_releases_prerelease_track() {
+        let release_dates = HashMap::from([
+            ("2.0.0-beta.2".to_string(), utc_date("2026-01-01T00:00:00Z")),
+            ("2.0.0-beta.3".to_string(), utc_date("2026-01-02T00:00:00Z")),
+            ("2.0.0-beta.4".to_string(), utc_date("2026-01-03T00:00:00Z")),
+            ("2.0.0-beta.5".to_string(), utc_date("2026-01-04T00:00:00Z")),
+            ("2.0.0-rc.1".to_string(), utc_date("2026-01-05T00:00:00Z")),
+            ("2.0.0".to_string(), utc_date("2026-01-06T00:00:00Z")),
+        ]);
+
+        let releases = build_recent_current_track_releases(
+            "next",
+            "2.0.0-beta.1",
+            "2.0.0-beta.5",
+            &release_dates,
+        );
+
+        assert_eq!(releases.len(), 3);
+        assert_eq!(releases[0].version, "2.0.0-beta.4");
+        assert_eq!(releases[1].version, "2.0.0-beta.3");
+        assert_eq!(releases[2].version, "2.0.0-beta.2");
+    }
+
+    #[test]
+    fn test_format_changelog_entries_with_and_without_dates() {
+        let entries = vec![
+            ChangelogEntry {
+                version: Version::parse("1.2.3").unwrap(),
+                version_string: "1.2.3".to_string(),
+                body: "- Added feature".to_string(),
+                release_date: Some(utc_date("2026-01-03T00:00:00Z")),
+            },
+            ChangelogEntry {
+                version: Version::parse("1.2.2").unwrap(),
+                version_string: "1.2.2".to_string(),
+                body: "- Fixed bug".to_string(),
+                release_date: None,
+            },
+        ];
+
+        let output = format_changelog_entries(entries);
+
+        assert!(output.contains("## 1.2.3 (03/01/2026, "));
+        assert!(output.contains("## 1.2.2"));
+        assert!(!output.contains("## 1.2.2 ("));
+    }
+
+    #[test]
+    fn test_format_changelog_entries_avoids_duplicate_date_in_header() {
+        let entries = vec![ChangelogEntry {
+            version: Version::parse("3.3.0").unwrap(),
+            version_string: "3.3.0 (2026-02-14)".to_string(),
+            body: "- Notes".to_string(),
+            release_date: Some(utc_date("2026-02-14T00:00:00Z")),
+        }];
+
+        let output = format_changelog_entries(entries);
+
+        assert!(output.contains("## 3.3.0 (14/02/2026, "));
+        assert!(!output.contains("## 3.3.0 (2026-02-14)"));
+    }
+
+    #[test]
+    fn test_format_changelog_entries_normalizes_dash_date_header() {
+        let entries = vec![ChangelogEntry {
+            version: Version::parse("4.18.2").unwrap(),
+            version_string: "[4.18.2] - 2024-01-15".to_string(),
+            body: "- Notes".to_string(),
+            release_date: Some(utc_date("2024-01-15T00:00:00Z")),
+        }];
+
+        let output = format_changelog_entries(entries);
+
+        assert!(output.contains("## [4.18.2] (15/01/2024, "));
+        assert!(!output.contains("## [4.18.2] - 2024-01-15"));
+    }
+
+    #[test]
     fn test_check_version_status() {
         let tracks = vec![
             TrackInfo {
@@ -1617,20 +1950,22 @@ mod tests {
             },
         ];
 
-        match check_version_status("1.0.0", "2.0.0", "latest", &tracks, None, None) {
+        match check_version_status("1.0.0", "2.0.0", "latest", &tracks, &[], None, None) {
             VersionStatus::UpdateAvailable {
                 severity,
+                recent_current_track_releases,
                 other_tracks,
                 ..
             } => {
                 assert_eq!(severity, UpdateSeverity::Major);
+                assert!(recent_current_track_releases.is_empty());
                 assert_eq!(other_tracks.len(), 1);
                 assert_eq!(other_tracks[0].name, "next");
             }
             _ => panic!("Expected UpdateAvailable"),
         }
 
-        match check_version_status("2.0.0", "2.0.0", "latest", &tracks, None, None) {
+        match check_version_status("2.0.0", "2.0.0", "latest", &tracks, &[], None, None) {
             VersionStatus::UpToDate { other_tracks, .. } => {
                 assert_eq!(other_tracks.len(), 1);
             }
@@ -1653,7 +1988,7 @@ mod tests {
             },
         ];
 
-        match check_version_status("2.0.0", "2.0.0", "latest", &tracks, None, None) {
+        match check_version_status("2.0.0", "2.0.0", "latest", &tracks, &[], None, None) {
             VersionStatus::UpToDate { .. } => {}
             _ => panic!("Expected UpToDate when only other tracks are newer"),
         }
@@ -1827,13 +2162,14 @@ Below is a list of all new features
 misc.
 "#;
 
-        let entries = extract_changelog_sections_since_version(content, "19.1.0", "19.2.1");
+        let entries = extract_changelog_sections_since_version(content, "19.1.0", "19.2.1", None);
 
-        assert_eq!(entries.len(), 4); // 19.2.1, 19.2.0, 19.1.2, 19.1.1 (not 19.1.0)
+        assert_eq!(entries.len(), 5); // 19.2.1, 19.2.0, 19.1.2, 19.1.1, 19.1.0
         assert_eq!(entries[0].version, Version::parse("19.2.1").unwrap());
         assert_eq!(entries[1].version, Version::parse("19.2.0").unwrap());
         assert_eq!(entries[2].version, Version::parse("19.1.2").unwrap());
         assert_eq!(entries[3].version, Version::parse("19.1.1").unwrap());
+        assert_eq!(entries[4].version, Version::parse("19.1.0").unwrap());
     }
 
     #[test]
@@ -1864,7 +2200,7 @@ Major release
 Major release
 "#;
 
-        let entries = extract_changelog_sections_since_version(content, "1.0.0", "10.0.0");
+        let entries = extract_changelog_sections_since_version(content, "1.0.0", "10.0.0", None);
 
         // All 8 versions should be included (10, 9, 8, 7, 6, 5, 4, 3) since MAX is now 15
         assert_eq!(entries.len(), 8);

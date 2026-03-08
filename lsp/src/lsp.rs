@@ -165,6 +165,7 @@ impl Backend {
                             &pkg_info.latest_on_track,
                             &pkg_info.current_track,
                             &pkg_info.all_tracks,
+                            &pkg_info.recent_current_track_releases,
                             None, // Placeholder - we'll fill in changelog after
                             pkg_info.repository_url.clone(),
                         );
@@ -185,6 +186,7 @@ impl Backend {
                                     &latest_for_changelog,
                                     repo_url,
                                     pkg_info.repository_directory.as_deref(),
+                                    Some(&pkg_info.version_publish_dates),
                                 )
                                 .await
                         } else {
@@ -196,6 +198,8 @@ impl Backend {
                             VersionStatus::UpdateAvailable {
                                 current_track,
                                 current_version,
+                                current_track_release_date,
+                                recent_current_track_releases,
                                 latest_on_track,
                                 other_tracks,
                                 severity,
@@ -204,6 +208,8 @@ impl Backend {
                             } => VersionStatus::UpdateAvailable {
                                 current_track,
                                 current_version,
+                                current_track_release_date,
+                                recent_current_track_releases,
                                 latest_on_track,
                                 other_tracks,
                                 severity,
@@ -213,11 +219,15 @@ impl Backend {
                             VersionStatus::UpToDate {
                                 current_track,
                                 current_version,
+                                current_track_release_date,
+                                recent_current_track_releases,
                                 other_tracks,
                                 ..
                             } => VersionStatus::UpToDate {
                                 current_track,
                                 current_version,
+                                current_track_release_date,
+                                recent_current_track_releases,
                                 other_tracks,
                                 changelog,
                                 repository_url: pkg_info.repository_url.clone(),
@@ -225,11 +235,15 @@ impl Backend {
                             VersionStatus::Unknown {
                                 current_track,
                                 current_version,
+                                current_track_release_date,
+                                recent_current_track_releases,
                                 other_tracks,
                                 ..
                             } => VersionStatus::Unknown {
                                 current_track,
                                 current_version,
+                                current_track_release_date,
+                                recent_current_track_releases,
                                 other_tracks,
                                 changelog,
                                 repository_url: pkg_info.repository_url.clone(),
@@ -240,6 +254,8 @@ impl Backend {
                         VersionStatus::Unknown {
                             current_track: "latest".to_string(),
                             current_version: dep_clean_version.clone(),
+                            current_track_release_date: None,
+                            recent_current_track_releases: vec![],
                             other_tracks: vec![],
                             changelog: None,
                             repository_url: pkg_info.repository_url.clone(),
@@ -249,6 +265,8 @@ impl Backend {
                     VersionStatus::Unknown {
                         current_track: "latest".to_string(),
                         current_version: dep_clean_version.clone(),
+                        current_track_release_date: None,
+                        recent_current_track_releases: vec![],
                         other_tracks: vec![],
                         changelog: None,
                         repository_url: None,
@@ -298,8 +316,9 @@ impl Backend {
                     latest_on_track,
                     severity,
                     current_track,
+                    current_track_release_date: _,
                     current_version,
-                    other_tracks,
+                    other_tracks: _,
                     ..
                 } = status
                 {
@@ -311,18 +330,11 @@ impl Backend {
                         continue;
                     }
 
-                    let time_ago = other_tracks
-                        .iter()
-                        .find(|t| t.name == *current_track)
-                        .and_then(|t| t.release_date)
-                        .map(|date| format!(" ({})", format_date_with_ago(date)))
-                        .unwrap_or_default();
-
                     let update_label = current_pre_label
                         .filter(|label| Some(*label) == latest_pre_label)
                         .unwrap_or_else(|| severity.label());
 
-                    let message = format!("{} → {}{}", update_label, latest_on_track, time_ago);
+                    let message = format!("{} → {}", update_label, latest_on_track);
 
                     let diagnostic_severity = if current_pre_label.is_some() {
                         DiagnosticSeverity::HINT
@@ -422,33 +434,63 @@ impl Backend {
                         latest_on_track,
                         severity,
                         current_track,
+                        current_track_release_date,
+                        recent_current_track_releases,
                         other_tracks,
                         ..
                     } => {
                         // 1. Update on current track (preferred)
-                        let track_label = if current_track == "latest" {
-                            "latest".to_string()
+                        let type_label = prerelease_track_label(latest_on_track)
+                            .unwrap_or_else(|| severity.label());
+                        let current_track_time = current_track_release_date
+                            .as_ref()
+                            .copied()
+                            .map(|date| format!(" ({})", format_date_with_ago(date)))
+                            .unwrap_or_default();
+                        let preferred_title = if current_track == "latest" {
+                            format!(
+                                "{}: Update to latest {}{}",
+                                type_label, latest_on_track, current_track_time
+                            )
+                        } else if let Some(date) = current_track_release_date {
+                            format!(
+                                "{}: Update to {} ({} track, {})",
+                                type_label,
+                                latest_on_track,
+                                current_track,
+                                format_date_with_ago(*date)
+                            )
                         } else {
-                            format!("{} track", current_track)
+                            format!(
+                                "{}: Update to {} ({} track)",
+                                type_label, latest_on_track, current_track
+                            )
                         };
 
                         let update_action = create_update_action(
                             uri,
                             dep,
                             latest_on_track,
-                            &format!(
-                                "{}: Update {} to {} ({})",
-                                prerelease_track_label(latest_on_track)
-                                    .unwrap_or_else(|| severity.label()),
-                                dep.name,
-                                latest_on_track,
-                                track_label
-                            ),
+                            &preferred_title,
                             true, // is_preferred
                         );
                         actions.push(CodeActionOrCommand::CodeAction(update_action));
 
-                        // 2. Alternative track switches
+                        // 2. Fallback options on current track (older than latest, newer than current)
+                        for release in recent_current_track_releases {
+                            let title = format!(
+                                "- Update to {} {} ({})",
+                                current_track,
+                                release.version,
+                                format_date_with_ago(release.release_date)
+                            );
+
+                            let fallback_action =
+                                create_update_action(uri, dep, &release.version, &title, false);
+                            actions.push(CodeActionOrCommand::CodeAction(fallback_action));
+                        }
+
+                        // 3. Alternative track switches
                         // Sort: current track first, then by release date/version
                         let mut sorted_tracks: Vec<&TrackUpdate> = other_tracks.iter().collect();
 
@@ -790,6 +832,7 @@ impl LanguageServer for Backend {
                     let (
                         current_track,
                         current_version,
+                        current_track_release_date,
                         other_tracks,
                         changelog,
                         repository_url,
@@ -798,6 +841,7 @@ impl LanguageServer for Backend {
                         VersionStatus::UpdateAvailable {
                             current_track,
                             current_version,
+                            current_track_release_date,
                             other_tracks,
                             changelog,
                             repository_url,
@@ -806,6 +850,7 @@ impl LanguageServer for Backend {
                         } => (
                             current_track.clone(),
                             current_version.clone(),
+                            *current_track_release_date,
                             other_tracks.clone(),
                             changelog.clone(),
                             repository_url.clone(),
@@ -814,12 +859,15 @@ impl LanguageServer for Backend {
                         VersionStatus::UpToDate {
                             current_track,
                             current_version,
+                            current_track_release_date,
                             other_tracks,
                             changelog,
                             repository_url,
+                            ..
                         } => (
                             current_track.clone(),
                             current_version.clone(),
+                            *current_track_release_date,
                             other_tracks.clone(),
                             changelog.clone(),
                             repository_url.clone(),
@@ -828,12 +876,15 @@ impl LanguageServer for Backend {
                         VersionStatus::Unknown {
                             current_track,
                             current_version,
+                            current_track_release_date,
                             other_tracks,
                             changelog,
                             repository_url,
+                            ..
                         } => (
                             current_track.clone(),
                             current_version.clone(),
+                            *current_track_release_date,
                             other_tracks.clone(),
                             changelog.clone(),
                             repository_url.clone(),
@@ -879,7 +930,7 @@ impl LanguageServer for Backend {
                     let current_track_info = TrackUpdate {
                         name: current_track.clone(),
                         version: current_track_version,
-                        release_date: None, // Will be looked up from other_tracks if available
+                        release_date: current_track_release_date,
                         is_newer: false,
                     };
                     all_tracks.push(&current_track_info);
