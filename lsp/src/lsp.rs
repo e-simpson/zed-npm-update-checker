@@ -838,7 +838,7 @@ fn extract_github_owner_repo(url: &str) -> Option<(String, String)> {
 impl LanguageServer for Backend {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
         let initial_settings =
-            ExtensionSettings::from_sources_or_default(params.initialization_options.as_ref());
+            ExtensionSettings::from_value_or_default(params.initialization_options.as_ref());
         self.replace_settings(initial_settings).await;
 
         info!("{} initializing", LSP_NAME);

@@ -3,8 +3,6 @@ use zed_extension_api::{self as zed, Result};
 
 const GITHUB_REPO: &str = "e-simpson/zed-npm-update-checker";
 const LANGUAGE_SERVER_NAME: &str = "npm-package-json-checker-lsp";
-const SETTINGS_ENV_VAR: &str = "NPM_PACKAGE_JSON_CHECKER_SETTINGS";
-const INITIALIZATION_OPTIONS_ENV_VAR: &str = "NPM_PACKAGE_JSON_CHECKER_INITIALIZATION_OPTIONS";
 
 #[inline]
 fn bin_name() -> &'static str {
@@ -43,6 +41,10 @@ fn update_status(id: &zed::LanguageServerId, status: Status) {
 }
 
 impl NpmUpdatesExtension {
+    fn lsp_settings_for_worktree(worktree: &zed::Worktree) -> Option<zed::settings::LspSettings> {
+        zed::settings::LspSettings::for_worktree(LANGUAGE_SERVER_NAME, worktree).ok()
+    }
+
     fn language_server_binary_path(
         &mut self,
         id: &zed::LanguageServerId,
@@ -171,26 +173,28 @@ impl zed::Extension for NpmUpdatesExtension {
                 update_status(id, Status::Failed(err.to_string()));
             })?;
 
-        let mut env = Vec::new();
-        if let Ok(lsp_settings) =
-            zed::settings::LspSettings::for_worktree(LANGUAGE_SERVER_NAME, worktree)
-        {
-            if let Some(settings) = lsp_settings.settings {
-                env.push((SETTINGS_ENV_VAR.to_string(), settings.to_string()));
-            }
-            if let Some(initialization_options) = lsp_settings.initialization_options {
-                env.push((
-                    INITIALIZATION_OPTIONS_ENV_VAR.to_string(),
-                    initialization_options.to_string(),
-                ));
-            }
-        }
-
         Ok(zed::Command {
             command,
             args: vec![],
-            env,
+            env: Vec::new(),
         })
+    }
+
+    fn language_server_initialization_options(
+        &mut self,
+        _: &zed::LanguageServerId,
+        worktree: &zed::Worktree,
+    ) -> Result<Option<zed::serde_json::Value>> {
+        Ok(Self::lsp_settings_for_worktree(worktree)
+            .and_then(|settings| settings.initialization_options))
+    }
+
+    fn language_server_workspace_configuration(
+        &mut self,
+        _: &zed::LanguageServerId,
+        worktree: &zed::Worktree,
+    ) -> Result<Option<zed::serde_json::Value>> {
+        Ok(Self::lsp_settings_for_worktree(worktree).and_then(|settings| settings.settings))
     }
 }
 

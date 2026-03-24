@@ -3,8 +3,6 @@ use serde_json::{Map, Value};
 
 pub const SETTINGS_SERVER_KEY: &str = "npm-package-json-checker-lsp";
 pub const DEFAULT_REGISTRY_URL: &str = "https://registry.npmjs.org";
-pub const SETTINGS_ENV_VAR: &str = "NPM_PACKAGE_JSON_CHECKER_SETTINGS";
-pub const INITIALIZATION_OPTIONS_ENV_VAR: &str = "NPM_PACKAGE_JSON_CHECKER_INITIALIZATION_OPTIONS";
 const DEFAULT_CACHE_TTL_SECONDS: u64 = 300;
 const DEFAULT_MAX_CONCURRENT_REQUESTS: usize = 10;
 const DEFAULT_REQUEST_TIMEOUT_SECONDS: u64 = 15;
@@ -146,36 +144,6 @@ impl ExtensionSettingsPatch {
 }
 
 impl ExtensionSettings {
-    pub fn from_env_or_default() -> Self {
-        let mut settings = Self::default();
-
-        if let Ok(raw) = std::env::var(SETTINGS_ENV_VAR) {
-            if let Some(patch) = patch_from_json_string(&raw) {
-                settings.apply_patch(patch);
-            }
-        }
-
-        if let Ok(raw) = std::env::var(INITIALIZATION_OPTIONS_ENV_VAR) {
-            if let Some(patch) = patch_from_json_string(&raw) {
-                settings.apply_patch(patch);
-            }
-        }
-
-        settings
-    }
-
-    pub fn from_sources_or_default(initialization_options: Option<&Value>) -> Self {
-        let mut settings = Self::from_env_or_default();
-
-        if let Some(value) = initialization_options {
-            if let Some(patch) = ExtensionSettingsPatch::from_value(value) {
-                settings.apply_patch(patch);
-            }
-        }
-
-        settings
-    }
-
     pub fn from_value_or_default(value: Option<&Value>) -> Self {
         let mut settings = Self::default();
 
@@ -221,11 +189,6 @@ impl ExtensionSettings {
             self.date_display.format = date_format;
         }
     }
-}
-
-fn patch_from_json_string(raw: &str) -> Option<ExtensionSettingsPatch> {
-    let value: Value = serde_json::from_str(raw).ok()?;
-    ExtensionSettingsPatch::from_value(&value)
 }
 
 pub fn format_time_ago(date: DateTime<Utc>) -> String {
