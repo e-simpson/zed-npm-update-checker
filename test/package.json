@@ -9,7 +9,8 @@
     "moment": "^2.29.0",
     "zod": "^3.22.0",
     "react-native-screen-transitions": "^3.0.0",
-    "@expo/ui": "55.0.0-beta.1"
+    "@expo/ui": "55.0.0-beta.1",
+    "vite": "5.4.10"
   },
   "devDependencies": {
     "typescript": "^4.0.0",

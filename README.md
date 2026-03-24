@@ -22,7 +22,11 @@
     - Includes fallback update targets from the current track (older than latest, newer than current)
 - 📚 Distinguishes between release tracks (major/minor/patch/canary/nightly/beta/alpha/experimental)
 
-### Loading Indicator
+### Auto-completions
+<img src="./images/autocomplete.png" width="300"/>
+Zed auto-complete to upgrade quickly with the option to show multiple recent releases on current track.
+
+### Optional loading Indicator
 <img src="./images/inlay.png" width="300"/>
 For an inlay loading indicator, enable inlay hints in Zed:
 ```json
