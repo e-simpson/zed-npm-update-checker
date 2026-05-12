@@ -29,6 +29,7 @@ Zed auto-complete to upgrade quickly with the option to show multiple recent rel
 ### Optional loading Indicator
 <img src="./images/inlay.png" width="300"/>
 For an inlay loading indicator, enable inlay hints in Zed:
+
 ```json
 // settings.json
 {
