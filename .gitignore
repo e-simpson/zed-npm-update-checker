@@ -1,6 +1,8 @@
 # Build artifacts
 target/
 *.wasm
+/npm-package-json-checker-lsp
+/npm-package-json-checker-lsp.exe
 
 # IDE
 .idea/
@@ -11,8 +13,5 @@ target/
 # OS
 .DS_Store
 Thumbs.db
-
-# Rust
-Cargo.lock
 
 example/

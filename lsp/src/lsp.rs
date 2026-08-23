@@ -1,19 +1,27 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
-use tower_lsp::jsonrpc::Result;
-use tower_lsp::lsp_types::{self, *};
-use tower_lsp::{Client, LanguageServer, LspService, Server};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
+
+use futures::future::BoxFuture;
+use futures::stream::{FuturesUnordered, StreamExt};
+use tokio::sync::{Mutex, RwLock};
+use tokio::task::JoinHandle;
+use tower_lsp_server::jsonrpc::Result;
+use tower_lsp_server::ls_types::{self, *};
+use tower_lsp_server::{Client, LanguageServer, LspService, Server};
 use tracing::{debug, info};
 
-use crate::parser::{parse_package_json, Dependency};
+use crate::parser::{Dependency, parse_package_json};
 use crate::registry::{
-    check_version_status, prerelease_track_label, NpmRegistry, RegistryConfig, TrackUpdate,
-    VersionRelease, VersionStatus,
+    NpmRegistry, PackageVersionInfo, RegistryConfig, TrackUpdate, VersionRelease, VersionStatus,
+    check_version_status, prerelease_track_label,
 };
 use crate::settings::{ExtensionSettings, ExtensionSettingsPatch};
 
 const LSP_NAME: &str = "npm-package-json-checker-lsp";
+const RESULT_BATCH_SIZE: usize = 4;
+const RESULT_BATCH_MAX_WAIT: Duration = Duration::from_millis(100);
 
 /// State of a dependency check
 #[derive(Debug, Clone)]
@@ -31,13 +39,27 @@ struct DocumentState {
     dependencies: Vec<Dependency>,
     /// Check states for each package (package_name -> state)
     check_states: HashMap<String, CheckState>,
+    document_version: i32,
+    generation: u64,
 }
 
+#[derive(Clone)]
 struct Backend {
     client: Client,
     registry: Arc<NpmRegistry>,
-    documents: Arc<RwLock<HashMap<Url, DocumentState>>>,
+    documents: Arc<RwLock<HashMap<Uri, DocumentState>>>,
     settings: Arc<RwLock<ExtensionSettings>>,
+    document_tasks: Arc<Mutex<HashMap<Uri, JoinHandle<()>>>>,
+    next_generation: Arc<AtomicU64>,
+}
+
+struct ChangelogRequest {
+    package_name: String,
+    current_version: String,
+    latest_version: String,
+    repository_url: String,
+    repository_directory: Option<String>,
+    version_publish_dates: HashMap<String, chrono::DateTime<chrono::Utc>>,
 }
 
 impl Backend {
@@ -48,6 +70,8 @@ impl Backend {
             registry: Arc::new(NpmRegistry::new(Self::registry_config(&settings))),
             documents: Arc::new(RwLock::new(HashMap::new())),
             settings: Arc::new(RwLock::new(settings)),
+            document_tasks: Arc::new(Mutex::new(HashMap::new())),
+            next_generation: Arc::new(AtomicU64::new(1)),
         }
     }
 
@@ -56,6 +80,7 @@ impl Backend {
             registry_url: settings.registry_url.clone(),
             cache_ttl: std::time::Duration::from_secs(settings.cache_ttl_seconds),
             max_concurrent_requests: settings.max_concurrent_requests,
+            max_concurrent_changelog_requests: settings.max_concurrent_changelog_requests,
             request_timeout: std::time::Duration::from_secs(settings.request_timeout_seconds),
             date_display: settings.date_display.clone(),
         }
@@ -86,7 +111,7 @@ impl Backend {
     }
 
     async fn refresh_all_diagnostics(&self) {
-        let uris: Vec<Url> = {
+        let uris: Vec<Uri> = {
             let docs = self.documents.read().await;
             docs.keys().cloned().collect()
         };
@@ -97,38 +122,76 @@ impl Backend {
     }
 
     /// Check if the file is a package.json
-    fn is_package_json(uri: &Url) -> bool {
-        uri.path().ends_with("package.json")
+    fn is_package_json(uri: &Uri) -> bool {
+        uri.path().as_str().rsplit('/').next() == Some("package.json")
     }
 
-    /// Process a document - first show loading, then fetch versions incrementally
-    /// Uses dependency-level diffing to preserve check states for unchanged packages
-    async fn process_document(&self, uri: &Url, text: &str) {
-        if !Self::is_package_json(uri) {
+    async fn schedule_document(
+        &self,
+        uri: Uri,
+        text: String,
+        document_version: i32,
+        debounce: bool,
+    ) {
+        if !Self::is_package_json(&uri) {
             return;
         }
 
-        debug!("Processing {}", uri);
+        let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
+        let mut tasks = self.document_tasks.lock().await;
+        if let Some(previous) = tasks.remove(&uri) {
+            previous.abort();
+        }
 
-        // Parse new dependencies
-        let new_dependencies = parse_package_json(text);
+        let backend = self.clone();
+        let task_uri = uri.clone();
+        let task = tokio::spawn(async move {
+            if debounce {
+                tokio::time::sleep(Duration::from_millis(75)).await;
+            }
+            backend
+                .process_document(task_uri, text, document_version, generation)
+                .await;
+        });
+        tasks.insert(uri, task);
+    }
+
+    /// Process one document generation. Dropping this future cancels all in-flight HTTP futures.
+    async fn process_document(
+        &self,
+        uri: Uri,
+        text: String,
+        document_version: i32,
+        generation: u64,
+    ) {
+        debug!("Processing {:?} generation {}", uri, generation);
+
+        let new_dependencies = parse_package_json(&text);
 
         if new_dependencies.is_empty() {
-            let mut docs = self.documents.write().await;
-            docs.insert(
-                uri.clone(),
-                DocumentState {
-                    dependencies: vec![],
-                    check_states: HashMap::new(),
-                },
-            );
+            {
+                let mut docs = self.documents.write().await;
+                docs.insert(
+                    uri.clone(),
+                    DocumentState {
+                        dependencies: vec![],
+                        check_states: HashMap::new(),
+                        document_version,
+                        generation,
+                    },
+                );
+            }
+            self.client
+                .publish_diagnostics(uri.clone(), Vec::new(), Some(document_version))
+                .await;
+            self.refresh_inlay_hints().await;
             return;
         }
 
         // Get existing state to determine what needs re-checking
         let existing_deps: HashMap<String, (String, CheckState)> = {
             let docs = self.documents.read().await;
-            docs.get(uri)
+            docs.get(&uri)
                 .map(|state| {
                     state
                         .dependencies
@@ -149,11 +212,12 @@ impl Backend {
         let mut needs_fetch = Vec::new();
 
         for dep in &new_dependencies {
-            if let Some((old_version, old_state)) = existing_deps.get(&dep.name) {
+            if let Some((old_version, CheckState::Done(old_status))) = existing_deps.get(&dep.name)
+            {
                 if old_version == &dep.version {
                     // Version unchanged - preserve existing check state
                     debug!("Preserving cached state for {} @ {}", dep.name, dep.version);
-                    check_states.insert(dep.name.clone(), old_state.clone());
+                    check_states.insert(dep.name.clone(), CheckState::Done(old_status.clone()));
                 } else {
                     // Version changed - needs re-checking
                     debug!(
@@ -179,179 +243,185 @@ impl Backend {
                 DocumentState {
                     dependencies: new_dependencies.clone(),
                     check_states,
+                    document_version,
+                    generation,
                 },
             );
         }
 
-        // Only trigger refresh if there are packages to fetch
-        if !needs_fetch.is_empty() {
-            // Trigger refresh to show loading state for new/changed packages
-            let _ = self
-                .client
-                .send_request::<lsp_types::request::InlayHintRefreshRequest>(())
-                .await;
+        if needs_fetch.is_empty() {
+            self.publish_diagnostics(&uri).await;
+            return;
         }
+        self.refresh_inlay_hints().await;
 
-        // Fetch version info AND changelogs together in parallel, but only for changed/new deps
-        let mut handles = Vec::new();
-
-        for dep in &needs_fetch {
+        let mut version_futures: FuturesUnordered<
+            BoxFuture<'static, (Dependency, Option<crate::registry::PackageVersionInfo>)>,
+        > = FuturesUnordered::new();
+        for dep in needs_fetch {
             let registry = self.registry.clone();
-            let dep_name = dep.name.clone();
-            let dep_clean_version = dep.clean_version.clone();
-
-            let handle = tokio::spawn(async move {
-                // Step 1: Get version info from npm registry (includes all tracks)
-                let version_info = registry
-                    .get_package_version_info(&dep_name, &dep_clean_version)
+            version_futures.push(Box::pin(async move {
+                let info = registry
+                    .get_package_version_info(&dep.name, &dep.clean_version)
                     .await;
-
-                // Step 2: Check version status and fetch changelog if repo URL exists
-                let final_status = if let Some(ref pkg_info) = version_info {
-                    if !dep_clean_version.is_empty() {
-                        let temp_status = check_version_status(
-                            &dep_clean_version,
-                            &pkg_info.latest_on_track,
-                            &pkg_info.current_track,
-                            &pkg_info.all_tracks,
-                            &pkg_info.recent_current_track_releases,
-                            None, // Placeholder - we'll fill in changelog after
-                            pkg_info.repository_url.clone(),
-                        );
-
-                        // Fetch changelog if there's a repo URL
-                        let changelog = if let Some(ref repo_url) = pkg_info.repository_url {
-                            let latest_for_changelog = match &temp_status {
-                                VersionStatus::UpdateAvailable {
-                                    latest_on_track, ..
-                                } => latest_on_track.clone(),
-                                _ => dep_clean_version.clone(),
-                            };
-
-                            registry
-                                .fetch_changelog_for_package(
-                                    &dep_name,
-                                    &dep_clean_version,
-                                    &latest_for_changelog,
-                                    repo_url,
-                                    pkg_info.repository_directory.as_deref(),
-                                    Some(&pkg_info.version_publish_dates),
-                                )
-                                .await
-                        } else {
-                            None
-                        };
-
-                        // Build final status with changelog
-                        match temp_status {
-                            VersionStatus::UpdateAvailable {
-                                current_track,
-                                current_version,
-                                current_track_release_date,
-                                recent_current_track_releases,
-                                latest_on_track,
-                                other_tracks,
-                                severity,
-                                repository_url,
-                                ..
-                            } => VersionStatus::UpdateAvailable {
-                                current_track,
-                                current_version,
-                                current_track_release_date,
-                                recent_current_track_releases,
-                                latest_on_track,
-                                other_tracks,
-                                severity,
-                                changelog,
-                                repository_url,
-                            },
-                            VersionStatus::UpToDate {
-                                current_track,
-                                current_version,
-                                current_track_release_date,
-                                recent_current_track_releases,
-                                other_tracks,
-                                ..
-                            } => VersionStatus::UpToDate {
-                                current_track,
-                                current_version,
-                                current_track_release_date,
-                                recent_current_track_releases,
-                                other_tracks,
-                                changelog,
-                                repository_url: pkg_info.repository_url.clone(),
-                            },
-                            VersionStatus::Unknown {
-                                current_track,
-                                current_version,
-                                current_track_release_date,
-                                recent_current_track_releases,
-                                other_tracks,
-                                ..
-                            } => VersionStatus::Unknown {
-                                current_track,
-                                current_version,
-                                current_track_release_date,
-                                recent_current_track_releases,
-                                other_tracks,
-                                changelog,
-                                repository_url: pkg_info.repository_url.clone(),
-                            },
-                            other => other,
-                        }
-                    } else {
-                        VersionStatus::Unknown {
-                            current_track: "latest".to_string(),
-                            current_version: dep_clean_version.clone(),
-                            current_track_release_date: None,
-                            recent_current_track_releases: vec![],
-                            other_tracks: vec![],
-                            changelog: None,
-                            repository_url: pkg_info.repository_url.clone(),
-                        }
-                    }
-                } else {
-                    VersionStatus::Unknown {
-                        current_track: "latest".to_string(),
-                        current_version: dep_clean_version.clone(),
-                        current_track_release_date: None,
-                        recent_current_track_releases: vec![],
-                        other_tracks: vec![],
-                        changelog: None,
-                        repository_url: None,
-                    }
-                };
-
-                (dep_name, final_status)
-            });
-
-            handles.push(handle);
+                (dep, info)
+            }));
         }
 
-        // Wait for ALL fetches to complete, then update state
-        for handle in handles {
-            if let Ok((dep_name, status)) = handle.await {
-                let mut docs = self.documents.write().await;
-                if let Some(state) = docs.get_mut(&uri) {
-                    state
-                        .check_states
-                        .insert(dep_name, CheckState::Done(status));
+        let mut changelog_futures: FuturesUnordered<
+            BoxFuture<'static, (String, String, Option<String>)>,
+        > = FuturesUnordered::new();
+        let mut unflushed = 0usize;
+        let mut published_first_result = false;
+        let mut last_flush = Instant::now();
+        let mut changelog_unflushed = 0usize;
+        let mut published_first_changelog = false;
+        let mut last_changelog_flush = Instant::now();
+
+        while !version_futures.is_empty() || !changelog_futures.is_empty() {
+            tokio::select! {
+                Some((dep, package_info)) = version_futures.next(), if !version_futures.is_empty() => {
+                    let (status, changelog_request) = build_initial_status(&dep, package_info);
+                    if !self.store_status_if_current(&uri, generation, &dep, status).await {
+                        return;
+                    }
+                    unflushed += 1;
+
+                    if let Some(request) = changelog_request {
+                        let registry = self.registry.clone();
+                        let package_name = request.package_name.clone();
+                        let current_version = request.current_version.clone();
+                        changelog_futures.push(Box::pin(async move {
+                            let changelog = registry
+                                .fetch_changelog_for_package(
+                                    &request.package_name,
+                                    &request.current_version,
+                                    &request.latest_version,
+                                    &request.repository_url,
+                                    request.repository_directory.as_deref(),
+                                    Some(&request.version_publish_dates),
+                                )
+                                .await;
+                            (package_name, current_version, changelog)
+                        }));
+                    }
+
+                    if should_publish_batch(
+                        published_first_result,
+                        unflushed,
+                        last_flush.elapsed(),
+                        version_futures.is_empty(),
+                    ) {
+                        self.publish_progress(&uri, generation).await;
+                        published_first_result = true;
+                        unflushed = 0;
+                        last_flush = Instant::now();
+                    }
+                }
+                Some((package_name, current_version, changelog)) = changelog_futures.next(), if !changelog_futures.is_empty() => {
+                    if !self.store_changelog_if_current(
+                        &uri,
+                        generation,
+                        &package_name,
+                        &current_version,
+                        changelog,
+                    ).await {
+                        return;
+                    }
+                    changelog_unflushed += 1;
+                    if should_publish_batch(
+                        published_first_changelog,
+                        changelog_unflushed,
+                        last_changelog_flush.elapsed(),
+                        changelog_futures.is_empty(),
+                    ) {
+                        self.publish_diagnostics(&uri).await;
+                        published_first_changelog = true;
+                        changelog_unflushed = 0;
+                        last_changelog_flush = Instant::now();
+                    }
                 }
             }
         }
 
-        // Publish diagnostics and refresh UI once everything is ready (only if we fetched something)
-        if !needs_fetch.is_empty() {
+        if unflushed > 0 {
+            self.publish_progress(&uri, generation).await;
+        }
+    }
+
+    async fn store_status_if_current(
+        &self,
+        uri: &Uri,
+        generation: u64,
+        dependency: &Dependency,
+        status: VersionStatus,
+    ) -> bool {
+        let mut docs = self.documents.write().await;
+        let Some(state) = docs.get_mut(uri) else {
+            return false;
+        };
+        if state.generation != generation
+            || !state.dependencies.iter().any(|candidate| {
+                candidate.name == dependency.name && candidate.version == dependency.version
+            })
+        {
+            return false;
+        }
+        state
+            .check_states
+            .insert(dependency.name.clone(), CheckState::Done(status));
+        true
+    }
+
+    async fn store_changelog_if_current(
+        &self,
+        uri: &Uri,
+        generation: u64,
+        package_name: &str,
+        current_version: &str,
+        changelog: Option<String>,
+    ) -> bool {
+        let mut docs = self.documents.write().await;
+        let Some(state) = docs.get_mut(uri) else {
+            return false;
+        };
+        if state.generation != generation
+            || !state.dependencies.iter().any(|dependency| {
+                dependency.name == package_name && dependency.clean_version == current_version
+            })
+        {
+            return false;
+        }
+        if let Some(CheckState::Done(status)) = state.check_states.get_mut(package_name) {
+            set_changelog(status, changelog);
+        }
+        true
+    }
+
+    async fn publish_progress(&self, uri: &Uri, generation: u64) {
+        let is_current = self
+            .documents
+            .read()
+            .await
+            .get(uri)
+            .is_some_and(|state| state.generation == generation);
+        if is_current {
+            self.refresh_inlay_hints().await;
+            self.publish_diagnostics(uri).await;
+        }
+    }
+
+    async fn refresh_inlay_hints(&self) {
+        if self.current_settings().await.show_loading_hints {
             let _ = self
                 .client
-                .send_request::<lsp_types::request::InlayHintRefreshRequest>(())
+                .send_request::<ls_types::request::InlayHintRefreshRequest>(())
                 .await;
-            self.publish_diagnostics(&uri).await;
         }
     }
 
     /// Publish diagnostics for outdated packages
-    async fn publish_diagnostics(&self, uri: &Url) {
+    async fn publish_diagnostics(&self, uri: &Uri) {
         let settings = self.current_settings().await;
         let docs = self.documents.read().await;
         let Some(state) = docs.get(uri) else {
@@ -361,34 +431,65 @@ impl Backend {
         let mut diagnostics = Vec::new();
 
         for dep in &state.dependencies {
-            if let Some(CheckState::Done(status)) = state.check_states.get(&dep.name) {
-                if let VersionStatus::UpdateAvailable {
-                    latest_on_track,
-                    severity,
-                    current_track,
-                    current_track_release_date: _,
-                    current_version,
-                    other_tracks,
-                    ..
-                } = status
-                {
-                    let current_pre_label = prerelease_track_label(current_version);
-                    let latest_pre_label = prerelease_track_label(latest_on_track);
+            if let Some(CheckState::Done(VersionStatus::UpdateAvailable {
+                latest_on_track,
+                severity,
+                current_track,
+                current_track_release_date: _,
+                current_version,
+                other_tracks,
+                ..
+            })) = state.check_states.get(&dep.name)
+            {
+                let current_pre_label = prerelease_track_label(current_version);
+                let latest_pre_label = prerelease_track_label(latest_on_track);
 
-                    // For prerelease channels, only surface updates that stay on the same channel.
-                    if !(current_pre_label.is_some() && current_pre_label != latest_pre_label) {
-                        let update_label = current_pre_label
-                            .filter(|label| Some(*label) == latest_pre_label)
-                            .unwrap_or_else(|| severity.label());
+                // For prerelease channels, only surface updates that stay on the same channel.
+                if !(current_pre_label.is_some() && current_pre_label != latest_pre_label) {
+                    let update_label = current_pre_label
+                        .filter(|label| Some(*label) == latest_pre_label)
+                        .unwrap_or_else(|| severity.label());
 
-                        let message = format!("{} → {}", update_label, latest_on_track);
+                    let message = format!("{} → {}", update_label, latest_on_track);
 
-                        let diagnostic_severity = if current_pre_label.is_some() {
-                            DiagnosticSeverity::HINT
-                        } else {
-                            DiagnosticSeverity::INFORMATION
-                        };
+                    let diagnostic_severity = if current_pre_label.is_some() {
+                        DiagnosticSeverity::HINT
+                    } else {
+                        DiagnosticSeverity::INFORMATION
+                    };
 
+                    diagnostics.push(Diagnostic {
+                        range: Range {
+                            start: Position {
+                                line: dep.line,
+                                character: dep.version_start_col,
+                            },
+                            end: Position {
+                                line: dep.line,
+                                character: dep.version_end_col,
+                            },
+                        },
+                        severity: Some(diagnostic_severity),
+                        code: Some(NumberOrString::String("outdated-dependency".to_string())),
+                        source: Some(LSP_NAME.to_string()),
+                        message,
+                        related_information: None,
+                        tags: None,
+                        code_description: None,
+                        data: Some(serde_json::json!({
+                            "package": dep.name,
+                            "current": dep.version,
+                            "latest": latest_on_track,
+                            "severity": update_label,
+                            "track": current_track,
+                        })),
+                    });
+                }
+
+                if settings.show_experimental_tracks {
+                    let newer_other_tracks = collect_newer_track_summaries(other_tracks, &settings);
+
+                    if !newer_other_tracks.is_empty() {
                         diagnostics.push(Diagnostic {
                             range: Range {
                                 start: Position {
@@ -400,68 +501,39 @@ impl Backend {
                                     character: dep.version_end_col,
                                 },
                             },
-                            severity: Some(diagnostic_severity),
-                            code: Some(NumberOrString::String("outdated-dependency".to_string())),
+                            severity: Some(DiagnosticSeverity::HINT),
+                            code: Some(NumberOrString::String(
+                                "outdated-dependency-alt-track".to_string(),
+                            )),
                             source: Some(LSP_NAME.to_string()),
-                            message,
+                            message: newer_other_tracks.join(", "),
                             related_information: None,
                             tags: None,
                             code_description: None,
                             data: Some(serde_json::json!({
                                 "package": dep.name,
-                                "current": dep.version,
-                                "latest": latest_on_track,
-                                "severity": update_label,
-                                "track": current_track,
+                                "track_updates": newer_other_tracks,
                             })),
                         });
-                    }
-
-                    if settings.show_experimental_tracks {
-                        let newer_other_tracks =
-                            collect_newer_track_summaries(other_tracks, &settings);
-
-                        if !newer_other_tracks.is_empty() {
-                            diagnostics.push(Diagnostic {
-                                range: Range {
-                                    start: Position {
-                                        line: dep.line,
-                                        character: dep.version_start_col,
-                                    },
-                                    end: Position {
-                                        line: dep.line,
-                                        character: dep.version_end_col,
-                                    },
-                                },
-                                severity: Some(DiagnosticSeverity::HINT),
-                                code: Some(NumberOrString::String(
-                                    "outdated-dependency-alt-track".to_string(),
-                                )),
-                                source: Some(LSP_NAME.to_string()),
-                                message: newer_other_tracks.join(", "),
-                                related_information: None,
-                                tags: None,
-                                code_description: None,
-                                data: Some(serde_json::json!({
-                                    "package": dep.name,
-                                    "track_updates": newer_other_tracks,
-                                })),
-                            });
-                        }
                     }
                 }
             }
         }
 
+        let document_version = state.document_version;
         drop(docs);
 
         self.client
-            .publish_diagnostics(uri.clone(), diagnostics, None)
+            .publish_diagnostics(uri.clone(), diagnostics, Some(document_version))
             .await;
     }
 
     /// Generate inlay hints for a document
-    async fn generate_inlay_hints(&self, uri: &Url) -> Vec<InlayHint> {
+    async fn generate_inlay_hints(&self, uri: &Uri) -> Vec<InlayHint> {
+        if !self.current_settings().await.show_loading_hints {
+            return vec![];
+        }
+
         let docs = self.documents.read().await;
         let Some(state) = docs.get(uri) else {
             return vec![];
@@ -495,7 +567,7 @@ impl Backend {
     }
 
     /// Generate code actions for a range
-    async fn generate_code_actions(&self, uri: &Url, range: Range) -> Vec<CodeActionOrCommand> {
+    async fn generate_code_actions(&self, uri: &Uri, range: Range) -> Vec<CodeActionOrCommand> {
         let settings = self.current_settings().await;
         let docs = self.documents.read().await;
         let Some(state) = docs.get(uri) else {
@@ -510,7 +582,7 @@ impl Backend {
                 continue;
             }
 
-            if let Some(CheckState::Done(ref status)) = state.check_states.get(&dep.name) {
+            if let Some(CheckState::Done(status)) = state.check_states.get(&dep.name) {
                 match status {
                     VersionStatus::UpdateAvailable {
                         latest_on_track,
@@ -715,7 +787,7 @@ impl Backend {
 
 /// Create an update code action
 fn create_update_action(
-    uri: &Url,
+    uri: &Uri,
     dep: &Dependency,
     new_version: &str,
     title: &str,
@@ -773,10 +845,7 @@ fn collect_newer_track_summaries(
         .collect()
 }
 
-fn recent_release_actions<'a>(
-    releases: &'a [VersionRelease],
-    limit: usize,
-) -> Vec<&'a VersionRelease> {
+fn recent_release_actions(releases: &[VersionRelease], limit: usize) -> Vec<&VersionRelease> {
     if limit == 0 {
         return Vec::new();
     }
@@ -834,7 +903,96 @@ fn extract_github_owner_repo(url: &str) -> Option<(String, String)> {
     None
 }
 
-#[tower_lsp::async_trait]
+fn build_initial_status(
+    dependency: &Dependency,
+    package_info: Option<PackageVersionInfo>,
+) -> (VersionStatus, Option<ChangelogRequest>) {
+    let Some(package_info) = package_info else {
+        return (
+            VersionStatus::Unknown {
+                current_track: "latest".to_string(),
+                current_version: dependency.clean_version.clone(),
+                current_track_release_date: None,
+                recent_current_track_releases: vec![],
+                other_tracks: vec![],
+                changelog: None,
+                repository_url: None,
+            },
+            None,
+        );
+    };
+
+    if dependency.clean_version.is_empty() {
+        return (
+            VersionStatus::Unknown {
+                current_track: "latest".to_string(),
+                current_version: dependency.clean_version.clone(),
+                current_track_release_date: None,
+                recent_current_track_releases: vec![],
+                other_tracks: vec![],
+                changelog: None,
+                repository_url: package_info.repository_url,
+            },
+            None,
+        );
+    }
+
+    let status = check_version_status(
+        &dependency.clean_version,
+        &package_info.latest_on_track,
+        &package_info.current_track,
+        &package_info.all_tracks,
+        &package_info.recent_current_track_releases,
+        None,
+        package_info.repository_url.clone(),
+    );
+    let latest_version = match &status {
+        VersionStatus::UpdateAvailable {
+            latest_on_track, ..
+        } => latest_on_track.clone(),
+        _ => dependency.clean_version.clone(),
+    };
+    let changelog_request = package_info
+        .repository_url
+        .map(|repository_url| ChangelogRequest {
+            package_name: dependency.name.clone(),
+            current_version: dependency.clean_version.clone(),
+            latest_version,
+            repository_url,
+            repository_directory: package_info.repository_directory,
+            version_publish_dates: package_info.version_publish_dates,
+        });
+
+    (status, changelog_request)
+}
+
+fn set_changelog(status: &mut VersionStatus, changelog: Option<String>) {
+    match status {
+        VersionStatus::UpToDate {
+            changelog: current, ..
+        }
+        | VersionStatus::UpdateAvailable {
+            changelog: current, ..
+        }
+        | VersionStatus::Unknown {
+            changelog: current, ..
+        } => *current = changelog,
+    }
+}
+
+fn should_publish_batch(
+    published_first_result: bool,
+    pending_results: usize,
+    elapsed: Duration,
+    version_stage_complete: bool,
+) -> bool {
+    pending_results > 0
+        && (!published_first_result
+            || pending_results >= RESULT_BATCH_SIZE
+            || elapsed >= RESULT_BATCH_MAX_WAIT
+            || version_stage_complete)
+}
+
 impl LanguageServer for Backend {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
         let initial_settings =
@@ -872,6 +1030,7 @@ impl LanguageServer for Backend {
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 ..ServerCapabilities::default()
             },
+            offset_encoding: None,
         })
     }
 
@@ -885,31 +1044,50 @@ impl LanguageServer for Backend {
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
-        debug!("did_open: {}", params.text_document.uri);
-        self.process_document(&params.text_document.uri, &params.text_document.text)
+        debug!("did_open: {:?}", params.text_document.uri);
+        let document = params.text_document;
+        self.schedule_document(document.uri, document.text, document.version, false)
             .await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
-        debug!("did_change: {}", params.text_document.uri);
+        debug!("did_change: {:?}", params.text_document.uri);
         if let Some(change) = params.content_changes.into_iter().next() {
-            self.process_document(&params.text_document.uri, &change.text)
-                .await;
+            self.schedule_document(
+                params.text_document.uri,
+                change.text,
+                params.text_document.version,
+                true,
+            )
+            .await;
         }
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
-        debug!("did_save: {}", params.text_document.uri);
-        if let Some(text) = params.text {
-            self.process_document(&params.text_document.uri, &text)
-                .await;
-        }
+        debug!("did_save: {:?}", params.text_document.uri);
+        // FULL-sync didChange is authoritative and carries a document version.
+        // Reprocessing optional save text would risk publishing it with an older
+        // version while a debounced change is still pending.
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
-        debug!("did_close: {}", params.text_document.uri);
-        let mut docs = self.documents.write().await;
-        docs.remove(&params.text_document.uri);
+        debug!("did_close: {:?}", params.text_document.uri);
+        if let Some(task) = self
+            .document_tasks
+            .lock()
+            .await
+            .remove(&params.text_document.uri)
+        {
+            task.abort();
+        }
+        self.documents
+            .write()
+            .await
+            .remove(&params.text_document.uri);
+        self.client
+            .publish_diagnostics(params.text_document.uri, Vec::new(), None)
+            .await;
+        self.refresh_inlay_hints().await;
     }
 
     async fn did_change_configuration(&self, params: DidChangeConfigurationParams) {
@@ -919,13 +1097,13 @@ impl LanguageServer for Backend {
 
             let _ = self
                 .client
-                .send_request::<lsp_types::request::InlayHintRefreshRequest>(())
+                .send_request::<ls_types::request::InlayHintRefreshRequest>(())
                 .await;
         }
     }
 
     async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
-        debug!("inlay_hint request for: {}", params.text_document.uri);
+        debug!("inlay_hint request for: {:?}", params.text_document.uri);
         let hints = self.generate_inlay_hints(&params.text_document.uri).await;
         debug!("inlay_hint returning {} hints", hints.len());
         for hint in &hints {
@@ -935,7 +1113,7 @@ impl LanguageServer for Backend {
     }
 
     async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
-        debug!("code_action: {}", params.text_document.uri);
+        debug!("code_action: {:?}", params.text_document.uri);
         let actions = self
             .generate_code_actions(&params.text_document.uri, params.range)
             .await;
@@ -1024,7 +1202,6 @@ impl LanguageServer for Backend {
                             repository_url.clone(),
                             None,
                         ),
-                        _ => return Ok(None),
                     };
 
                     // Build hover content based on what's available
@@ -1156,6 +1333,7 @@ mod tests {
     use super::*;
     use crate::settings::{DateDisplaySettings, DateTagMode};
     use chrono::{DateTime, Utc};
+    use std::str::FromStr;
 
     fn utc_date(input: &str) -> DateTime<Utc> {
         DateTime::parse_from_rfc3339(input)
@@ -1165,10 +1343,12 @@ mod tests {
 
     #[test]
     fn collect_newer_track_summaries_filters_and_formats() {
-        let mut settings = ExtensionSettings::default();
-        settings.date_display = DateDisplaySettings {
-            mode: DateTagMode::Date,
-            format: "%Y-%m-%d".to_string(),
+        let settings = ExtensionSettings {
+            date_display: DateDisplaySettings {
+                mode: DateTagMode::Date,
+                format: "%Y-%m-%d".to_string(),
+            },
+            ..ExtensionSettings::default()
         };
 
         let summaries = collect_newer_track_summaries(
@@ -1212,5 +1392,28 @@ mod tests {
 
         assert!(recent_release_actions(&releases, 0).is_empty());
         assert_eq!(recent_release_actions(&releases, 2).len(), 2);
+    }
+
+    #[test]
+    fn progressive_publication_emits_first_then_batches() {
+        assert!(should_publish_batch(false, 1, Duration::ZERO, false));
+        assert!(!should_publish_batch(true, 1, Duration::ZERO, false));
+        assert!(should_publish_batch(
+            true,
+            RESULT_BATCH_SIZE,
+            Duration::ZERO,
+            false
+        ));
+        assert!(should_publish_batch(true, 1, RESULT_BATCH_MAX_WAIT, false));
+        assert!(should_publish_batch(true, 1, Duration::ZERO, true));
+    }
+
+    #[test]
+    fn package_json_detection_requires_exact_file_name() {
+        let package_json = Uri::from_str("file:///workspace/package.json").unwrap();
+        let lookalike = Uri::from_str("file:///workspace/my-package.json").unwrap();
+
+        assert!(Backend::is_package_json(&package_json));
+        assert!(!Backend::is_package_json(&lookalike));
     }
 }

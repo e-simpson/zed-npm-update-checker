@@ -5,32 +5,30 @@ pub const SETTINGS_SERVER_KEY: &str = "npm-package-json-checker-lsp";
 pub const DEFAULT_REGISTRY_URL: &str = "https://registry.npmjs.org";
 const DEFAULT_CACHE_TTL_SECONDS: u64 = 300;
 const DEFAULT_MAX_CONCURRENT_REQUESTS: usize = 10;
+const DEFAULT_MAX_CONCURRENT_CHANGELOG_REQUESTS: usize = 4;
 const DEFAULT_REQUEST_TIMEOUT_SECONDS: u64 = 15;
 const DEFAULT_RECENT_RELEASES_IN_CODE_ACTIONS: usize = 2;
 const DEFAULT_DATE_FORMAT: &str = "%d/%m/%Y";
 
-const KNOWN_SETTING_KEYS: [&str; 8] = [
+const KNOWN_SETTING_KEYS: [&str; 10] = [
     "registry_url",
     "cache_ttl_seconds",
     "max_concurrent_requests",
+    "max_concurrent_changelog_requests",
     "request_timeout_seconds",
     "show_experimental_tracks",
+    "show_loading_hints",
     "recent_releases_in_code_actions",
     "date_tag_mode",
     "date_format",
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum DateTagMode {
     Date,
     TimeAgo,
+    #[default]
     DateAndTimeAgo,
-}
-
-impl Default for DateTagMode {
-    fn default() -> Self {
-        Self::DateAndTimeAgo
-    }
 }
 
 impl DateTagMode {
@@ -77,8 +75,10 @@ pub struct ExtensionSettings {
     pub registry_url: String,
     pub cache_ttl_seconds: u64,
     pub max_concurrent_requests: usize,
+    pub max_concurrent_changelog_requests: usize,
     pub request_timeout_seconds: u64,
     pub show_experimental_tracks: bool,
+    pub show_loading_hints: bool,
     pub recent_releases_in_code_actions: usize,
     pub date_display: DateDisplaySettings,
 }
@@ -89,8 +89,10 @@ impl Default for ExtensionSettings {
             registry_url: DEFAULT_REGISTRY_URL.to_string(),
             cache_ttl_seconds: DEFAULT_CACHE_TTL_SECONDS,
             max_concurrent_requests: DEFAULT_MAX_CONCURRENT_REQUESTS,
+            max_concurrent_changelog_requests: DEFAULT_MAX_CONCURRENT_CHANGELOG_REQUESTS,
             request_timeout_seconds: DEFAULT_REQUEST_TIMEOUT_SECONDS,
             show_experimental_tracks: false,
+            show_loading_hints: true,
             recent_releases_in_code_actions: DEFAULT_RECENT_RELEASES_IN_CODE_ACTIONS,
             date_display: DateDisplaySettings::default(),
         }
@@ -102,8 +104,10 @@ pub struct ExtensionSettingsPatch {
     registry_url: Option<String>,
     cache_ttl_seconds: Option<u64>,
     max_concurrent_requests: Option<usize>,
+    max_concurrent_changelog_requests: Option<usize>,
     request_timeout_seconds: Option<u64>,
     show_experimental_tracks: Option<bool>,
+    show_loading_hints: Option<bool>,
     recent_releases_in_code_actions: Option<usize>,
     date_tag_mode: Option<DateTagMode>,
     date_format: Option<String>,
@@ -122,11 +126,17 @@ impl ExtensionSettingsPatch {
             max_concurrent_requests: settings_object
                 .get("max_concurrent_requests")
                 .and_then(read_usize),
+            max_concurrent_changelog_requests: settings_object
+                .get("max_concurrent_changelog_requests")
+                .and_then(read_usize),
             request_timeout_seconds: settings_object
                 .get("request_timeout_seconds")
                 .and_then(read_u64),
             show_experimental_tracks: settings_object
                 .get("show_experimental_tracks")
+                .and_then(Value::as_bool),
+            show_loading_hints: settings_object
+                .get("show_loading_hints")
                 .and_then(Value::as_bool),
             recent_releases_in_code_actions: settings_object
                 .get("recent_releases_in_code_actions")
@@ -169,12 +179,20 @@ impl ExtensionSettings {
             self.max_concurrent_requests = max_concurrent_requests.max(1);
         }
 
+        if let Some(max_concurrent_changelog_requests) = patch.max_concurrent_changelog_requests {
+            self.max_concurrent_changelog_requests = max_concurrent_changelog_requests.max(1);
+        }
+
         if let Some(request_timeout_seconds) = patch.request_timeout_seconds {
             self.request_timeout_seconds = request_timeout_seconds.max(1);
         }
 
         if let Some(show_experimental_tracks) = patch.show_experimental_tracks {
             self.show_experimental_tracks = show_experimental_tracks;
+        }
+
+        if let Some(show_loading_hints) = patch.show_loading_hints {
+            self.show_loading_hints = show_loading_hints;
         }
 
         if let Some(recent_releases_in_code_actions) = patch.recent_releases_in_code_actions {
@@ -227,7 +245,7 @@ pub fn format_time_ago(date: DateTime<Utc>) -> String {
     }
 }
 
-fn find_settings_object<'a>(value: &'a Value) -> Option<&'a Map<String, Value>> {
+fn find_settings_object(value: &Value) -> Option<&Map<String, Value>> {
     let object = value.as_object()?;
 
     if is_settings_object(object) {
@@ -333,10 +351,15 @@ mod tests {
             DEFAULT_MAX_CONCURRENT_REQUESTS
         );
         assert_eq!(
+            settings.max_concurrent_changelog_requests,
+            DEFAULT_MAX_CONCURRENT_CHANGELOG_REQUESTS
+        );
+        assert_eq!(
             settings.request_timeout_seconds,
             DEFAULT_REQUEST_TIMEOUT_SECONDS
         );
         assert!(!settings.show_experimental_tracks);
+        assert!(settings.show_loading_hints);
         assert_eq!(
             settings.recent_releases_in_code_actions,
             DEFAULT_RECENT_RELEASES_IN_CODE_ACTIONS
@@ -354,8 +377,10 @@ mod tests {
                         "registry_url": "https://registry.company.test/",
                         "cache_ttl_seconds": 12,
                         "max_concurrent_requests": 6,
+                        "max_concurrent_changelog_requests": 3,
                         "request_timeout_seconds": 20,
                         "show_experimental_tracks": true,
+                        "show_loading_hints": false,
                         "recent_releases_in_code_actions": 4,
                         "date_tag_mode": "timeago",
                         "date_format": "%Y-%m-%d"
@@ -369,8 +394,10 @@ mod tests {
         assert_eq!(settings.registry_url, "https://registry.company.test");
         assert_eq!(settings.cache_ttl_seconds, 12);
         assert_eq!(settings.max_concurrent_requests, 6);
+        assert_eq!(settings.max_concurrent_changelog_requests, 3);
         assert_eq!(settings.request_timeout_seconds, 20);
         assert!(settings.show_experimental_tracks);
+        assert!(!settings.show_loading_hints);
         assert_eq!(settings.recent_releases_in_code_actions, 4);
         assert_eq!(settings.date_display.mode, DateTagMode::TimeAgo);
         assert_eq!(settings.date_display.format, "%Y-%m-%d");
@@ -383,6 +410,7 @@ mod tests {
                 "registry_url": "not_a_url",
                 "cache_ttl_seconds": -5,
                 "max_concurrent_requests": 0,
+                "max_concurrent_changelog_requests": 0,
                 "request_timeout_seconds": 0,
                 "recent_releases_in_code_actions": -1,
                 "date_tag_mode": "invalid",
@@ -395,6 +423,7 @@ mod tests {
         assert_eq!(settings.registry_url, DEFAULT_REGISTRY_URL);
         assert_eq!(settings.cache_ttl_seconds, 0);
         assert_eq!(settings.max_concurrent_requests, 1);
+        assert_eq!(settings.max_concurrent_changelog_requests, 1);
         assert_eq!(settings.request_timeout_seconds, 1);
         assert_eq!(settings.recent_releases_in_code_actions, 0);
         assert_eq!(settings.date_display.mode, DateTagMode::DateAndTimeAgo);

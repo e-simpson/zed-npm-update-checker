@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify Rust workspace
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run strict Clippy
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - name: Run workspace tests
+        run: cargo test --locked --workspace --all-features
+      - name: Build native release LSP
+        run: cargo build --locked --release --package npm-package-json-checker-lsp
+      - name: Build wasm32-wasip2 extension
+        run: cargo build --locked --release --package npm-package-json-checker --target wasm32-wasip2

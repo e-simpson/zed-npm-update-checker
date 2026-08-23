@@ -52,6 +52,12 @@ impl NpmUpdatesExtension {
     ) -> Result<String> {
         let bin_name = bin_name();
 
+        // Dev extensions can place a locally built LSP beside extension.toml.
+        // Prefer it over PATH and GitHub releases so local testing is deterministic.
+        if fs::metadata(bin_name).is_ok_and(|stat| stat.is_file()) {
+            return Ok(bin_name.to_string());
+        }
+
         // Check if the binary is already installed in PATH
         if let Some(path) = worktree.which(bin_name) {
             return Ok(path);
@@ -59,7 +65,7 @@ impl NpmUpdatesExtension {
 
         // Check cached binary path
         if let Some(path) = &self.cached_binary_path {
-            if fs::metadata(path).map_or(false, |stat| stat.is_file()) {
+            if fs::metadata(path).is_ok_and(|stat| stat.is_file()) {
                 update_status(id, Status::None);
                 return Ok(path.clone());
             }
@@ -67,9 +73,9 @@ impl NpmUpdatesExtension {
 
         // Check if already downloaded to extension directory
         if let Some(binary_path) = Self::check_installed() {
-            // Silently check for updates in background
-            let _ = Self::check_to_update(id);
-            return Ok(binary_path);
+            // Prefer the newest release, but keep the installed binary as an
+            // offline fallback when GitHub cannot be reached.
+            return Ok(Self::check_to_update(id).unwrap_or(binary_path));
         }
 
         // Download from GitHub releases
@@ -82,7 +88,7 @@ impl NpmUpdatesExtension {
         let entries = fs::read_dir(".").ok()?;
         for entry in entries.flatten().filter(|entry| entry.path().is_dir()) {
             let binary_path = entry.path().join(bin_name());
-            if fs::metadata(&binary_path).map_or(false, |stat| stat.is_file()) {
+            if fs::metadata(&binary_path).is_ok_and(|stat| stat.is_file()) {
                 return binary_path.to_str().map(|s| s.to_string());
             }
         }
@@ -126,7 +132,7 @@ impl NpmUpdatesExtension {
         let bin_name = bin_name();
         let version_binary_path = format!("{version_dir}/{bin_name}");
 
-        if !fs::metadata(&version_binary_path).map_or(false, |stat| stat.is_file()) {
+        if !fs::metadata(&version_binary_path).is_ok_and(|stat| stat.is_file()) {
             update_status(id, Status::Downloading);
 
             let asset = release

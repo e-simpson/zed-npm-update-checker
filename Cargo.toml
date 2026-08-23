@@ -1,7 +1,8 @@
 [package]
 name = "npm-package-json-checker"
-version = "1.0.6"
-edition = "2021"
+version = "1.0.7"
+edition = "2024"
+rust-version = "1.85"
 license = "MIT"
 description = "📥 Highlights outdated npm packages and shows changelogs in package.json files. Changelogs from GitHub releases and/or CHANGELOG.md. Shown minimalistically without UI bloat."
 

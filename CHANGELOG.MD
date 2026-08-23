@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.7] - 2026-08-23
+
+### Added
+
+- Progressive batched dependency and changelog updates, with cancellation of stale work
+- Configurable loading hints (`show_loading_hints`, enabled by default) and changelog concurrency (`max_concurrent_changelog_requests`, default `4`)
+
+### Changed
+
+- Corrected `recent_releases_in_code_actions` default to `2`
+- Improved dependency caching and gzip handling
+- Dev-extension installs now prefer the locally built root LSP binary, while downloaded installs retain an offline fallback and otherwise activate the newest release immediately
+- Updated dependencies and added reproducible, locked-build CI and release verification
+
 ## [1.0.6] - 2026-03-09
 
 ### Changed

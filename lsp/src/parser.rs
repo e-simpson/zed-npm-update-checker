@@ -1,6 +1,4 @@
 use serde_json::Value;
-use tower_lsp::lsp_types::Position;
-
 /// A dependency found in package.json
 #[derive(Debug, Clone)]
 pub struct Dependency {
@@ -10,8 +8,6 @@ pub struct Dependency {
     pub version: String,
     /// Cleaned version for semver comparison (e.g., "4.18.0")
     pub clean_version: String,
-    /// Position of the version string in the document
-    pub version_position: Position,
     /// Line containing this dependency
     pub line: u32,
     /// Start column of the package name (excluding quotes)
@@ -22,27 +18,6 @@ pub struct Dependency {
     pub version_start_col: u32,
     /// End column of the version value (excluding quotes)
     pub version_end_col: u32,
-    /// Type of dependency section
-    pub dep_type: DependencyType,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DependencyType {
-    Dependencies,
-    DevDependencies,
-    PeerDependencies,
-    OptionalDependencies,
-}
-
-impl DependencyType {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            DependencyType::Dependencies => "dependencies",
-            DependencyType::DevDependencies => "devDependencies",
-            DependencyType::PeerDependencies => "peerDependencies",
-            DependencyType::OptionalDependencies => "optionalDependencies",
-        }
-    }
 }
 
 /// Parse package.json text and extract all dependencies with their positions
@@ -56,20 +31,18 @@ pub fn parse_package_json(text: &str) -> Vec<Dependency> {
     };
 
     let dep_types = [
-        ("dependencies", DependencyType::Dependencies),
-        ("devDependencies", DependencyType::DevDependencies),
-        ("peerDependencies", DependencyType::PeerDependencies),
-        ("optionalDependencies", DependencyType::OptionalDependencies),
+        "dependencies",
+        "devDependencies",
+        "peerDependencies",
+        "optionalDependencies",
     ];
 
-    for (section_name, dep_type) in dep_types {
+    for section_name in dep_types {
         if let Some(deps) = json.get(section_name).and_then(|d| d.as_object()) {
             for (name, version_value) in deps {
                 if let Some(version) = version_value.as_str() {
                     // Find the position in the text
-                    if let Some(dep) =
-                        find_dependency_position(text, section_name, name, version, dep_type)
-                    {
+                    if let Some(dep) = find_dependency_position(text, section_name, name, version) {
                         dependencies.push(dep);
                     }
                 }
@@ -86,7 +59,6 @@ fn find_dependency_position(
     section: &str,
     name: &str,
     version: &str,
-    dep_type: DependencyType,
 ) -> Option<Dependency> {
     let lines: Vec<&str> = text.lines().collect();
 
@@ -144,16 +116,11 @@ fn find_dependency_position(
                         name: name.to_string(),
                         version: version.to_string(),
                         clean_version: clean_version(version),
-                        version_position: Position {
-                            line: line_idx as u32,
-                            character: version_start as u32,
-                        },
                         line: line_idx as u32,
                         name_start_col: name_start as u32,
                         name_end_col: name_end as u32,
                         version_start_col: version_start as u32,
                         version_end_col: version_end as u32,
-                        dep_type,
                     });
                 }
             }

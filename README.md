@@ -12,7 +12,7 @@
 <img src="./images/screenshot.png"/>
 
 ### Features
-- 📥 Highlights outdated packages in package.json
+- 📥 Highlights outdated packages in package.json in real-time
 - 🔍 Changelog between current version and latest version 
     - Parses and combines GitHub releases and/or CHANGELOG.md
     - Shows changes from current to latest if possible
@@ -28,12 +28,22 @@ Zed auto-complete to upgrade quickly with the option to show multiple recent rel
 
 ### Optional loading Indicator
 <img src="./images/inlay.png" width="300"/>
-For an inlay loading indicator, enable inlay hints in Zed:
+
+The extension-side loading hint is enabled by default, but Zed disables inlay hints globally by default. Enable both layers in your Zed settings:
+
 ```json
 // settings.json
 {
   "inlay_hints": {
-    "enabled": true
+    "enabled": true,
+    "show_value_hints": true
+  },
+  "lsp": {
+    "npm-package-json-checker-lsp": {
+      "settings": {
+        "show_loading_hints": true
+      }
+    }
   }
 }
 ```
@@ -47,10 +57,14 @@ For an inlay loading indicator, enable inlay hints in Zed:
 1. Clone this repository
 2. Build the LSP:
    ```bash
-   cargo build --release -p npm-package-json-checker-lsp
+   cargo build --locked --release -p npm-package-json-checker-lsp
    cp target/release/npm-package-json-checker-lsp .
    ```
 3. In Zed: Command Palette → "zed: install dev extension" → select this directory
+
+The extension prefers this copied root binary during dev-extension testing, so it will not silently substitute a previously published GitHub asset.
+
+To test the checkout locally, run `cargo test --locked --workspace --all-features` and `cargo fmt --all -- --check`. The release workflow also builds the extension for `wasm32-wasip2`.
 
 ### Misc
 - Caches packages and attempts to not re-pull them if it doesn't need to
@@ -66,9 +80,11 @@ Configure the extension in your Zed `settings.json` under `lsp.npm-package-json-
 | `registry_url` | `string` | `"https://registry.npmjs.org"` | Registry base URL used for package metadata lookups (manual override; `.npmrc`/env discovery is not used). |
 | `cache_ttl_seconds` | `number` | `300` | Cache TTL in seconds (`0` disables cache reuse). |
 | `max_concurrent_requests` | `number` | `10` | Max concurrent registry requests (minimum `1`). |
+| `max_concurrent_changelog_requests` | `number` | `4` | Max concurrent changelog requests (minimum `1`). |
 | `request_timeout_seconds` | `number` | `15` | HTTP timeout in seconds (minimum `1`). |
+| `show_loading_hints` | `boolean` | `true` | Show loading inlay hints while package version metadata is being fetched. Zed's global `inlay_hints.enabled` setting must also be enabled. |
 | `show_experimental_tracks` | `boolean` | `false` | Show extra hint diagnostics for newer non-current tracks (including experimental/pre-release tracks). |
-| `recent_releases_in_code_actions` | `number` | `3` | Number of fallback "recent release" code actions on the current track (`0` disables them). |
+| `recent_releases_in_code_actions` | `number` | `2` | Number of fallback "recent release" code actions on the current track (`0` disables them). |
 | `date_tag_mode` | `"date" \| "timeago" \| "date+timeago"` | `"date+timeago"` | Controls how release dates are rendered in labels/changelog headers. |
 | `date_format` | `string` | `"%d/%m/%Y"` | `chrono` date format string used when `date_tag_mode` includes date output. |
 
@@ -82,9 +98,11 @@ Default settings snippet:
         "registry_url": "https://registry.npmjs.org",
         "cache_ttl_seconds": 300,
         "max_concurrent_requests": 10,
+        "max_concurrent_changelog_requests": 4,
         "request_timeout_seconds": 15,
+        "show_loading_hints": true,
         "show_experimental_tracks": false,
-        "recent_releases_in_code_actions": 3,
+        "recent_releases_in_code_actions": 2,
         "date_tag_mode": "date+timeago",
         "date_format": "%d/%m/%Y"
       }
